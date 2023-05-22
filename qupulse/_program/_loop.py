@@ -7,7 +7,7 @@ import bisect
 import numpy as np
 import sympy.ntheory
 
-from qupulse._program.waveforms import Waveform, ConstantWaveform
+from qupulse._program.waveforms import Waveform, ConstantWaveform, SlicedWaveform
 from qupulse._program.volatile import VolatileRepetitionCount, VolatileProperty
 
 from qupulse.utils import is_integer
@@ -17,7 +17,7 @@ from qupulse.utils.numeric import smallest_factor_ge
 
 from qupulse._program.waveforms import SequenceWaveform, RepetitionWaveform
 
-__all__ = ['Loop', 'make_compatible', 'MakeCompatibleWarning']
+__all__ = ['Loop', 'MultiChannelProgram', 'make_compatible', 'to_waveform']
 
 
 class Loop(Node):
@@ -670,6 +670,87 @@ def _repeat_loop_measurements(begin_length_list: List[np.ndarray],
     shaped_begin_length_array[:, :, 0] += (np.arange(repetition_count) * body_duration)[:, np.newaxis]
 
     return begin_length_array
+
+
+def optimize_program(prog,min_len,quantum,accuracy):
+    
+    if prog.is_leaf():
+        
+        if prog.duration%quantum == 0 and (prog.duration>=min_len or prog.duration==0):
+            return
+        
+        else:    
+            
+            if prog.duration<min_len:
+                missing_len = TimeType(min_len-prog.duration)
+            else:
+                missing_len = TimeType(quantum-prog.duration%quantum)
+                
+            if prog.waveform.is_constant:
+                if missing_len/prog.duration <= accuracy:
+                    prog.waveform = SlicedWaveform(prog.waveform, 0, TimeType(prog.duration//quantum*quantum))
+                    return
+            
+            next_progs = [find_next_leaf(prog)]
+            
+            if next_progs[0] is None:
+                return
+
+            durations = [next_progs[0].duration]
+
+            while sum(durations) < missing_len:
+                next_prog = find_next_leaf(next_progs[-1])
+                if next_prog is None:
+                    break
+                
+                next_progs.append(find_next_leaf(next_progs[-1]))
+                durations.append(next_progs[-1].duration)
+                
+            if sum(durations) <= missing_len:
+                new_waveform=SequenceWaveform([prog.waveform]+[next_prog.waveform for next_prog in next_progs[:-1]])
+                for next_prog in next_progs:
+                    prog.waveform=None
+            else:
+
+                new_waveform=SequenceWaveform([prog.waveform]+
+                                                [next_prog.waveform for next_prog in next_progs[:-1]]+
+                                                [SlicedWaveform(next_progs[-1].waveform,0,missing_len-sum(durations[:-1]))])
+
+                next_progs[-1].waveform= SlicedWaveform(next_progs[-1].waveform,
+                                                    missing_len-sum(durations[:-1]),
+                                                    next_progs[-1].duration-(missing_len-sum(durations[:-1])))
+                for next_prog in next_progs[:-1]:
+                    prog.waveform=None
+
+            prog.waveform = new_waveform
+            
+            return
+            
+    else:        
+        for sub_prog in prog:
+            optimize_program(sub_prog,min_len,quantum,accuracy)
+            
+def find_next_leaf(prog):
+    
+    location=prog.get_location()
+    if prog.parent is None or prog.parent.repetition_count>1:
+        return
+    
+    if len(prog.parent)>location[-1]+1:
+        return first_leaf(prog.parent[location[-1]+1])
+    
+    else:
+        return find_next_leaf(prog.parent)
+        
+def first_leaf(prog):
+    
+    if prog.repetition_count>1:
+        return
+
+    elif prog.is_leaf():
+            return prog
+    else:
+        return first_leaf(prog[0])
 
 
 class MakeCompatibleWarning(ResourceWarning):
