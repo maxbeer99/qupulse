@@ -143,3 +143,4 @@ def write_int_table(target: Union[str, BinaryIO, os.PathLike], array: np.ndarray
             np.savetxt(target, array, '%u', delimiter=sep)  # pragma: no cover
     finally:
         if close_target:
+            target.close()
