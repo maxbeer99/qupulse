@@ -1270,6 +1270,5 @@ class SlicedWaveform(Waveform):
     def get_slice(self, start: TimeType, duration: TimeType) -> 'Waveform':
         return SlicedWaveform(self._inner, start + self._start, duration)
 
-    
-
     def __repr__(self):
+        return(f'{type(self).__name__}(inner = {self._inner!r}, start = {self._start}, duration = {self.duration})' )
