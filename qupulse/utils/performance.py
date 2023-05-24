@@ -1,4 +1,5 @@
-from typing import Tuple
+import os
+from typing import Tuple, Union, BinaryIO
 import numpy as np
 
 try:

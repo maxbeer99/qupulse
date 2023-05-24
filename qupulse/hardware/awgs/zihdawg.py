@@ -109,9 +109,6 @@ class HDAWGRepresentation:
         self._zhinst_session = Session(data_server_addr, data_server_port)
         
         #api_level_number not in use anymore (?)
-        
-        # self._api_session = zhinst_core.ziDAQServer(data_server_addr, data_server_port, api_level_number)
-
         self._device = self._zhinst_session.connect_device(serial=device_serial, interface=device_interface)
 
         self._api_session = self._zhinst_session.daq_server
@@ -122,6 +119,7 @@ class HDAWGRepresentation:
 
         if reset:
             # Create a base configuration: Disable all available outputs, awgs, demods, scopes,...
+            #TODO: this currently creates errors when the sequencer is running as waveforms are deleted. need to disable sequencer separately?
             zhinst.utils.disable_everything(self.api_session, self.serial)
 
         self._initialize()
@@ -153,19 +151,8 @@ class HDAWGRepresentation:
         if grouping is None:
             grouping = self.channel_grouping
         # activates channel groups
-        #!!! possible unwanted behavior in labone? MDS errors out when trying to assign multiple indices to same waveform due
-        #to compilation of same seqc-program on several cores.
+        # TODO: sometimes weird behavior with MDS? does this code always do what it is intended for?
         self.channel_grouping = grouping
-        #TODO: no master device initialized if MDS?
-        # self.channel_grouping = HDAWGChannelGrouping.CHAN_GROUP_1x8
-        
-        
-    def set_sample_clock(self,sample_clock_Hz: float):
-        assert sample_clock_Hz >= 1e8, 'Must be >= 100MHz'
-        assert sample_clock_Hz <= 2.4e9, 'Must be <= 2.4GHz'
-        
-        node_path = '/{}/system/clocks/sampleclock/freq'.format(self.serial)
-        sample_clock_Hz = self.api_session.setDouble(node_path,sample_clock_Hz)
 
     @property
     def waveform_file_system(self) -> WaveformFileSystem:
@@ -250,6 +237,13 @@ class HDAWGRepresentation:
                     return group
             else:
                 raise
+            
+    def set_sample_clock(self,sample_clock_Hz: float):
+        assert sample_clock_Hz >= 1e8, 'Must be >= 100MHz'
+        assert sample_clock_Hz <= 2.4e9, 'Must be <= 2.4GHz'
+        
+        node_path = '/{}/system/clocks/sampleclock/freq'.format(self.serial)
+        sample_clock_Hz = self.api_session.setDouble(node_path,sample_clock_Hz)
 
     @property
     def channel_grouping(self) -> 'HDAWGChannelGrouping':
@@ -397,10 +391,9 @@ class HDAWGModulationMode(Enum):
 
 @traced
 class HDAWGChannelGroup(AWG):
-    # MIN_WAVEFORM_LEN = 192
-    # WAVEFORM_LEN_QUANTUM = 16
     
-    MIN_WAVEFORM_LEN = 32
+    MIN_WAVEFORM_LEN = 32 #With the command table and discarding playWaveIndexed,
+    # it should now be relatively reliable to set 32 as the minimum instead of 192
     WAVEFORM_LEN_QUANTUM = 16
     
     def __init__(self,
@@ -419,31 +412,20 @@ class HDAWGChannelGroup(AWG):
 
         self._master_device = None
         
+        #TODO: this was a first test to integrate own code snippets. may be deleted/altered
         self.append_seqc_snippet = None
         
     def _initialize_awg_module(self):
         """Only run once"""
-        #!!! DISABLE if new 
+        #TODO: if at some point the offline compilation works with grouped mode,
+        # this can be reworked as awgModules no longer needed (in favor of zhinst_toolkit)
         if self._awg_module:
             self._awg_module.clear()
         self._awg_module = self.master_device.api_session.awgModule()
         self._awg_module.set('awgModule/device', self.master_device.serial)
         self._awg_module.set('awgModule/index', self.awg_group_index)
         self._awg_module.execute()
-        
-        # awg_modules_all = [self._awg_module]
-        # for i in range(1,4):
-        #     awg_mod = self.master_device.api_session.awgModule()
-        #     awg_mod.set('awgModule/device', self.master_device.serial)
-        #     awg_mod.set('awgModule/index', i)
-        
-        
-        # self._elf_manager = ELFManager(self._master_device._device, self.awg_group_index, pathlib.Path(self._master_device._base_path,'awg'),
-        #                                self.awg_module
-        #                                )
-        self._elf_manager = ELFManager(
-                                       self.awg_module
-                                       )
+        self._elf_manager = ELFManager(self.awg_module)
         self._upload_generator = ()
 
     @property
@@ -453,7 +435,6 @@ class HDAWGChannelGroup(AWG):
             raise HDAWGValueError('Channel group is currently not connected')
         return self._master_device
     
-    #TODO: IFF new upload works disable
     @property
     def awg_module(self) -> zhinst_core.AwgModule:
         """Each AWG channel group has its own awg module to manage program compilation and upload."""
@@ -548,14 +529,10 @@ class HDAWGChannelGroup(AWG):
 
         self._required_seqc_source = self._program_manager.to_seqc_program()
         
-        #TODO: here need to update the file definitions for separated waveforms?
-        #pseudo:
-        # self._program_manager.waveform_memory.separate_file_definitions(self._program_manager.programs)
-        
-        #TODO: may be omitted if playceholder wfs used, perhaps faster?
+        #TODO: may be omitted if placeholder wfs used, perhaps faster?
         self._program_manager.waveform_memory.sync_to_file_system(self.master_device.waveform_file_system)
         
-        #called after everything else done?
+        #needs to be uploaded only after everything else (elf-upload) done
         self._current_ct_tuple = self._program_manager.finalize_ct_tuple()
         
         # start compiling the source (non-blocking)
@@ -564,23 +541,6 @@ class HDAWGChannelGroup(AWG):
     def _start_compile_and_upload(self):
         self._uploaded_seqc_source = None
         self._upload_generator = self._elf_manager.compile_and_upload(self._required_seqc_source)
-
-    # def _start_compile_and_upload(self):
-    #     self._uploaded_seqc_source = None
-    #     self._elf_manager.compile_and_upload(self._required_seqc_source)
-
-    # def _wait_for_compile_and_upload_elf(self):
-    #     # wait = True
-    #     # while wait:
-            
-    #     logger.debug("wait_for_compile_and_upload: %r", 'MaKinG ProGreSs')
-    #         # time.sleep(.1)
-    #     #!!! ENABLE iff new upload
-    #     for i in range(4):
-    #         self._master_device._device.awgs[i].ready.wait_for_state_change(1)
-            
-    #     self._uploaded_seqc_source = self._required_seqc_source
-    #     logger.debug("AWG %d: wait_for_compile_and_upload has finished", self.awg_group_index)
 
     def _wait_for_compile_and_upload_elf(self):
         for state in self._upload_generator:
@@ -593,18 +553,16 @@ class HDAWGChannelGroup(AWG):
         
         self._wait_for_compile_and_upload_elf()
         
-        #TODO: this should be more time consuming here...
         self._program_manager._waveform_memory._zhinst_waveforms_tuple
-        
+        #TODO: this should be the most time-consuming here...
         with self._master_device._device.set_transaction():
             for i in range(4):
                 self._master_device._device.awgs[i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
         self._upload_ct_tuple(self._current_ct_tuple)
         
-        #!!! does this mean everything uploaded? check others too, or not relevant cause grouped?
+        #!!! does this mean everything uploaded? check others too, or not relevant if grouped / potentially harmful?
         self._master_device._device.awgs[0].ready.wait_for_state_change(1,timeout=self.timeout)
-        
 
     def set_sample_rate_num(self,sample_rate_num: int):
         assert type(sample_rate_num)==int, 'Must be integer'
@@ -623,28 +581,22 @@ class HDAWGChannelGroup(AWG):
     @commandtable.setter
     def commandtable(self, ct: str):
         node_base_path = '/{}/awgs/{}'.format(self.master_device.serial, self.awg_group_index)
-
         self.master_device.api_session.set(node_base_path+'/commandtable/data', ct)
-    
     
     def get_commandtable_schema(self,awg_int=None) -> dict:
         node_base_path = '/{}/awgs/{}'.format(self.master_device.serial, awg_int if awg_int is not None else self.awg_group_index)
-
         #there seems to be no method to get "vector" entries directly?
         tree_dict = self.master_device.api_session.get(node_base_path+'/commandtable/schema')
 
         return tree_dict[str(self.master_device.serial).lower()]["awgs"][str(awg_int if awg_int is not None else self.awg_group_index)]["commandtable"]["schema"][0]["vector"]
     
     def get_ct_schemata(self, idx: tuple=(0,1,2,3)) -> Tuple[str]:
-        
         return tuple([self.get_commandtable_schema(i) for i in idx])
-    
     
     def _upload_ct_tuple(self, ct_tuple: Tuple[str]):
         for i,ct in enumerate(ct_tuple):
             node_base_path = '/{}/awgs/{}'.format(self.master_device.serial, i)
             self.master_device.api_session.set(node_base_path+'/commandtable/data', ct)
-    
     
     def was_current_program_finished(self) -> bool:
         """Return true if the current program has finished at least once"""
@@ -680,7 +632,8 @@ class HDAWGChannelGroup(AWG):
         self._required_seqc_source = self._program_manager.to_seqc_program()
         self._start_compile_and_upload()
         self.arm(None)
-        
+    
+    #TODO: this only becomes relevant for self-triggering in the future
     def _prepare_for_DIO(self):
         
         # node_base = '/{}'.format(self.master_device.serial)
@@ -693,17 +646,18 @@ class HDAWGChannelGroup(AWG):
         #     self.master_device.api_session.setInt(node_base+f'/AWGS/{i}/DIO/STROBE/SLOPE',0)
         
         
-        with self.master_device._device.set_transaction():
-            # Settings in 'DIO' tab
-            self.master_device._device.dios[0].drive(0b0001)                        # Enable driving first byte
-            self.master_device._device.dios[0].output(0x00)                         # Reset DIO to clean state
-            self.master_device._device.dios[0].mode('awg_sequencer_commands')       # Switch to "AWG Sequencer" mode
+        # with self.master_device._device.set_transaction():
+        #     # Settings in 'DIO' tab
+        #     self.master_device._device.dios[0].drive(0b0001)                        # Enable driving first byte
+        #     self.master_device._device.dios[0].output(0x00)                         # Reset DIO to clean state
+        #     self.master_device._device.dios[0].mode('awg_sequencer_commands')       # Switch to "AWG Sequencer" mode
             
-            # Settings in "AWG Sequencer" - "Trigger" sub-tab
-            self.master_device._device.awgs["*"].dio.valid.polarity('high')
-            self.master_device._device.awgs["*"].dio.valid.index(0)
-            self.master_device._device.awgs["*"].dio.strobe.slope('off')
+        #     # Settings in "AWG Sequencer" - "Trigger" sub-tab
+        #     self.master_device._device.awgs["*"].dio.valid.polarity('high')
+        #     self.master_device._device.awgs["*"].dio.valid.index(0)
+        #     self.master_device._device.awgs["*"].dio.strobe.slope('off')
         
+        # pass
         return  
         
     def arm(self, name: Optional[str]) -> None:
@@ -715,7 +669,6 @@ class HDAWGChannelGroup(AWG):
         """
         
         # self._prepare_for_DIO()
-        
         
         if self.num_channels > 8:
             if name is None:
@@ -791,9 +744,8 @@ class HDAWGChannelGroup(AWG):
 
     def disconnect_group(self):
         """Disconnect this group from device so groups of another size can be used"""
-        #TODO: other disconnect necessary?
-        # if self._awg_module:
-        #     self.awg_module.clear()
+        if self._awg_module:
+            self.awg_module.clear()
         self._master_device = None
         self._elf_manager = None
         self._upload_generator = ()
@@ -868,7 +820,7 @@ class MDSChannelGroup(HDAWGChannelGroup):
         if status is not None:
             # self.awg_module.set('awg/enable', int(status))
             self.master_device.api_session.setInt(node_path, int(status))
-            #TODO: foloowing line copied from SINgleDeviceChannelGroup. necessary?
+            #TODO: following line copied from SingleDeviceChannelGroup. necessary?
             # self.master_device.api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
         else:
             # status = self.awg_module.get('awg/module')
@@ -939,11 +891,11 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
         """AWG node group index assuming 4x2 channel grouping. Then 0...3 will give appropriate index of group."""
         return self._group_idx
 
-    # @property
-    # def user_directory(self) -> str:
-    #     """LabOne user directory with subdirectories: "awg/src" (seqc sourcefiles), "awg/elf" (compiled AWG binaries),
-    #     "awag/waves" (user defined csv waveforms)."""
-    #     return self.awg_module.getString('awgModule/directory')
+    @property
+    def user_directory(self) -> str:
+        """LabOne user directory with subdirectories: "awg/src" (seqc sourcefiles), "awg/elf" (compiled AWG binaries),
+        "awag/waves" (user defined csv waveforms)."""
+        return self.awg_module.getString('awgModule/directory')
 
     def enable(self, status: bool = None) -> bool:
         """Start the AWG sequencer."""
@@ -971,332 +923,7 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
 
     def offsets(self) -> Tuple[float, ...]:
         return tuple(map(self.master_device.offset, self._channels()))
-
-
-# class ELFManager:  
     
-#     #TODO: not working anymore.
-#     class AWGModule:
-#         def __init__(self, awg_module: zhinst_core.AwgModule):
-#             """Provide an easily mockable interface to the zhinst AwgModule object"""
-#             self._module = awg_module
-            
-#         @property
-#         def src_dir(self) -> pathlib.Path:
-#             return pathlib.Path(self._module.getString('directory'), 'awg', 'src')
-
-#         @property
-#         def elf_dir(self) -> pathlib.Path:
-#             return pathlib.Path(self._module.getString('directory'), 'awg', 'elf')
-
-#         @property
-#         def compiler_start(self) -> bool:
-#             """True if the compiler is running"""
-#             return self._module.getInt('compiler/start') == 1
-
-#         @compiler_start.setter
-#         def compiler_start(self, value: bool):
-#             """Set true to start the compiler"""
-#             self._module.set('compiler/start', value)
-
-#         @property
-#         def compiler_status(self) -> Tuple[int, str]:
-#             return self._module.getInt('compiler/status'), self._module.getString('compiler/statusstring')
-
-#         @property
-#         def compiler_source_file(self) -> str:
-#             return self._module.getString('compiler/sourcefile')
-
-#         @compiler_source_file.setter
-#         def compiler_source_file(self, source_file: str):
-#             self._module.set('compiler/sourcefile', source_file)
-
-#         @property
-#         def compiler_upload(self) -> bool:
-#             """auto upload after compiling"""
-#             return self._module.getInt('compiler/upload') == 1
-
-#         @compiler_upload.setter
-#         def compiler_upload(self, value: bool):
-#             self._module.set('compiler/upload', value)
-
-#         @property
-#         def elf_file(self) -> str:
-#             return self._module.getString('elf/file')
-
-#         @elf_file.setter
-#         def elf_file(self, elf_file: str):
-#             self._module.set('elf/file', elf_file)
-        
-#         @property
-#         def elf_files_unified(self) -> str:
-#             return self._module.getString('elf/file')
-
-#         @elf_files_unified.setter
-#         def elf_files_unified(self, elf_file: str):
-#             # self._module.set('elf/file', elf_file)
-#             for i in range(4)[::-1]:
-#                 self.api_session.set('/{}/awgs/{}/elf/data'.format(self._dev,i),elf_file)
-        
-        
-#         @property
-#         def elf_upload(self) -> bool:
-#             return bool(self._module.getInt('elf/upload'))
-
-#         @elf_upload.setter
-#         def elf_upload(self, value: bool):
-#             self._module.set('elf/upload', value)
-
-#         @property
-#         def elf_status(self) -> Tuple[int, float]:
-#             return self._module.getInt('elf/status'), self._module.getDouble('progress')
-
-#         @property
-#         def index(self) -> int:
-#             return self._module.getInt('index')
-    
-#     def __init__(self, device, awg_index: int, file_path,
-#                   zhinst_awg_module,
-#                  ):
-#         """This class organizes compiling and uploading of compiled programs. The source code file is named based on the
-#         code hash to cache compilation results. This requires that the waveform names are unique.
-
-#         The compilation and upload itself are done asynchronously by zhinst.core. To avoid spawning a useless
-#         thread for updating the status the method :py:meth:`~ELFManager.compile_and_upload` returns a generator which
-#         talks to the undelying library when needed."""
-        
-#         # self._modules_all = [self.AWGModule(awg) for awg in awg_modules_all]
-
-#         self._device = device
-#         self._base_file_path = file_path
-        
-#         # self.awg_module = self.AWGModule()
-#         # self.awg_module = self.AWGModule(device.awgs[awg_index])
-#         self.awg_module = self.AWGModule(zhinst_awg_module)
-
-#         # automatically upload after successful compilation
-#         self.awg_module.compiler_upload = True
-
-#         self._compile_job = None  # type: Optional[Union[str, Tuple[str, int, str]]]
-#         self._upload_job = None  # type: Optional[Union[Tuple[str, float], Tuple[str, int]]]
-        
-#     #TODO: implement.
-#     def clear(self):
-#         """Deletes all files with a SHA512 hash name"""
-#         src_regex = re.compile(r'[a-z0-9]{128}\.seqc')
-#         elf_regex = re.compile(r'[a-z0-9]{128}\.elf')
-
-#         for p in self.awg_module.src_dir.iterdir():
-#             if src_regex.match(p.name):
-#                 p.unlink()
-
-#         for p in self.awg_module.elf_dir.iterdir():
-#             if elf_regex.match(p.name):
-#                 p.unlink()
-    
-#     #!!! need anyways
-#     @staticmethod
-#     def _source_hash(source_string: str) -> str:
-#         """Calulate the SHA512 hash of the given source.
-
-#         Args:
-#             source_string: seqc source code
-
-#         Returns:
-#             hex representation of SHA512 `source_string` hash
-#         """
-#         # use utf-16 because str is UTF16 on most relevant machines (Windows)
-#         return hashlib.sha512(bytes(source_string, 'utf-16')).hexdigest()
-
-#     def _update_compile_job_status(self):
-#         """Store current compile status in self._compile_job."""
-#         compiler_start = self.awg_module.compiler_start
-#         if self._compile_job is None:
-#             assert compiler_start == 0
-
-#         elif isinstance(self._compile_job, str):
-#             if compiler_start:
-#                 # compilation is running
-#                 pass
-
-#             else:
-#                 compiler_status, status_string = self.awg_module.compiler_status
-#                 assert compiler_status in (-1, 0, 1, 2)
-#                 if compiler_status == -1:
-#                     raise RuntimeError('Compile job is set but no compilation is running', status_string)
-#                 elif compiler_status == 2:
-#                     logger.warning("AWG %d: Compilation finished with warning: %s", self.awg_module.index, status_string)
-#                 self._compile_job = (self._compile_job, compiler_status, status_string)
-
-#     def _start_compile_job(self, source_file):
-#         logger.debug("Starting compilation of %r", source_file)
-#         self._update_compile_job_status()
-#         assert not isinstance(self._compile_job, str)
-#         self.awg_module.compiler_source_file = source_file
-#         self.awg_module.compiler_start = True
-#         self._compile_job = source_file
-#         logger.debug("AWG %d: Compilation of %r started", self.awg_module.index, source_file)
-
-#     def _compile(self, source_file) -> Generator[str, str, None]:
-#         self._start_compile_job(source_file)
-
-#         while True:
-#             self._update_compile_job_status()
-#             if not isinstance(self._compile_job, str):
-#                 # finished compiling
-#                 logger.debug("AWG %d: Compilation of %r finished", self.awg_module.index, source_file)
-#                 break
-#             cmd = yield 'compiling'
-#             if cmd is None:
-#                 logger.debug('No command received during compiling')
-#             elif cmd == 'abort':
-#                 raise NotImplementedError('clean abort not implemented')
-#             else:
-#                 raise HDAWGValueError('Unknown command', cmd)
-
-#         _, status_int, status_str = self._compile_job
-#         if status_int == 1:
-#             raise HDAWGRuntimeError('Compilation failed', status_str)
-#         logger.info("AWG %d: Compilation of %r successful", self.awg_module.index, source_file)
-
-#     def _start_elf_upload(self, elf_file):
-#         logger.debug("Uploading %r", elf_file)
-#         # if current_elf != elf_file:
-#         # if True:
-#         logger.info("AWG %d: Overwriting elf file", self.awg_module.index)
-#         for i,awg in enumerate(self._modules_all):
-#             current_elf = awg.elf_file
-#             # if current_elf != elf_file:
-#             awg.elf_file = elf_file
-#             self.awg_module.elf_upload = True
-#         self._upload_job = (elf_file, None)
-#         time.sleep(.001)
-
-#     def _update_upload_job_status(self):
-#         elf_upload = self.awg_module.elf_upload
-#         if self._upload_job is None:
-#             assert not elf_upload
-#             return
-
-#         elf_file, old_status = self._upload_job
-#         assert self.awg_module.elf_file == elf_file
-
-#         if isinstance(old_status, float) or old_status is None:
-#             status_int, progress = self.awg_module.elf_status
-#             if status_int == 2:
-#                 # in progress
-#                 assert elf_upload == 1
-#                 self._upload_job = elf_file, progress
-#             else:
-#                 # fetch new value here
-#                 self._upload_job = elf_file, status_int
-
-#         else:
-#             logger.debug('AWG %d: _update_upload_job_status called on finished upload', self.awg_module.index)
-#             assert elf_upload == 0
-
-#     def _upload(self, elf_file) -> Generator[str, str, None]:
-#         #!!! TODO:
-#         # if self.awg_module.compiler_upload:
-#         #     ###error when this is true -> upload_job stays None -> cannot unpack NoneType later?
-            
-#         #     pass
-#         # else:
-#         self._start_elf_upload(elf_file)
-
-#         while True:
-#             self._update_upload_job_status()
-#             _, status = self._upload_job
-#             if isinstance(status, int):
-#                 assert status in (-1, 0, 1)
-#                 if status == 1:
-#                     raise RuntimeError('ELF upload failed')
-#                 else:
-#                     break
-#             else:
-#                 progress = status
-#                 logger.debug('AWG %d: Upload progress is %d%%', self.awg_module.index, progress*100)
-
-#                 cmd = yield 'uploading @ %d%%' % (100*progress)
-#                 if cmd is None:
-#                     logger.debug("No command received during upload")
-#                 if cmd == 'abort':
-#                     # TODO: check if this stops the upload
-#                     self.awg_module.elf_upload = False
-#                     raise NotImplementedError('Abort upload not cleanly implemented')
-#                 else:
-#                     raise HDAWGValueError('Unknown command', cmd)
-
-#         # enable auto upload on compilation again
-#         # TODO: research whether this is necessary
-#         # self.awg_module.elf_file = ''
-        
-#     def compile_and_upload(self, source_string: str) -> Generator[str, str, None]:
-#         """The source code is saved to a file determined by the source hash, compiled and uploaded to the instrument.
-#         The function returns a generator that yields the current state of the progress. The generator is empty iff the
-#         upload is complete. An exception is raised if there is an error.
-
-#         To abort send 'abort' to the generator.
-
-#         Example:
-#             >>> my_source = 'playWave("my_wave");'
-#             >>> for state in elf_manager.compile_and_upload(my_source):
-#             ...     print('Current state:', state)
-#             ...     time.sleep(1)
-
-#         Args:
-#             source_string: Source code to compile
-
-#         Returns:
-#             Generator object that needs to be consumed
-#         """
-#         self._update_compile_job_status()
-#         if isinstance(self._compile_job, str):
-#             raise NotImplementedError('cannot upload: compilation in progress')
-        
-#         src_dir = pathlib.Path(self._base_file_path,'src')
-        
-        
-#         source_hash = self._source_hash(source_string)
-
-#         seqc_file_name = '%s.seqc' % source_hash
-#         elf_file_name = '%s.elf' % source_hash
-
-#         # full_source_name = src_dir.joinpath(seqc_file_name)
-        
-#         full_source_name = self.awg_module.elf_dir.joinpath(elf_file_name)
-#         full_elf_name = self.awg_module.elf_dir.joinpath(elf_file_name)
-
-#         if not full_source_name.exists():
-#             full_source_name.write_text(source_string, 'utf-8')
-
-#         # we assume same source == same program here
-#         if not full_elf_name.exists():
-#             yield from self._compile(seqc_file_name)
-#         else:
-#             # set this so the web interface shows the correct source
-#             # self.awg_module.compiler_source_file = seqc_file_name
-#             logger.info('Already compiled. ELF: %r', elf_file_name)
-        
-#         #!!! IFF new offline compiler works without channel issues...
-#         # compile_info = []
-        
-#         # #!!! try to not upload on awg 1-4
-#         # # compile_info = [self._device.awgs[i].load_sequencer_program(source_string) for i in range(1,4)]
-        
-#         # #DIOTrigger:
-#         # dio_replace_dict = {'waitDIOTrigger();': 'setDIO(1);wait(5);setDIO(0);waitDIOTrigger();'}
-        
-#         # # dio_replace_dict = {'waitDIOTrigger();': 'setDIO(1);wait(500);waitDIOTrigger();'}
-#         # # dio_replace_dict = {'waitDIOTrigger();': ''}
-
-#         # source_string_dio = replace_multiple(source_string,dio_replace_dict)
-#         # compile_info.insert(0,self._device.awgs[0].load_sequencer_program(source_string_dio))
-        
-#         ## self._device.awgs[0].ready.wait_for_state_change(1)
-        
-#         # return tuple(compile_info)
-#         # yield from self._upload(elf_file_name)
 
 class ELFManager:
     class AWGModule:

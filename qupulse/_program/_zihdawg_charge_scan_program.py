@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 
-# import numpy as np
 import textwrap
-from ast import literal_eval
-# from qupulse import 
-
 from abc import ABC, abstractmethod
-from typing import Tuple, Iterator, List, Iterable, Optional, Dict
+from typing import Tuple, Iterator, List, Iterable, Dict
 from zhinst.toolkit import CommandTable
-from qupulse._program._loop import Loop, make_compatible
+from qupulse._program._loop import make_compatible
 from qupulse.pulses.pulse_template import PulseTemplate
 from qupulse.pulses import ForLoopPT, PointPT, SequencePT, AtomicMultiChannelPT
 from qupulse.hardware.awgs.zihdawg import  HDAWGChannelGroup
@@ -19,7 +15,6 @@ from qupulse.hardware.dacs.alazar import AlazarCard
 from qupulse.hardware.setup import MeasurementMask
 from atsaverage.operations import Downsample, ChunkedAverage
 
-import hashlib
 import time
 import json
 
@@ -28,21 +23,10 @@ import matplotlib.pyplot as plt
 # import gridspec
 
 
-#TODO: better control reset of registers -> otherwise weird?
-#TODO: waveform names with time hash so no duplicates?
-
-
-#TODO: careful with start/stop; slow maybe not stopping at endpoint - DONE
 #TODO: 50 or 1MOhm termination???
-#TODO: adapt "ones" to output range cause not automatically... - DONE
 
-#in this way, program instantation needs to be done after all relevant settings of the hdawg are finished setting up?
-#NO
 class FixedStructureProgram(ABC):
-    #(Loop,ABC) inherited in __init__ #NOT ANYMORE, not working
     
-    # SAMPLE_RATE = 2.4e9
-    # WAVEFORM_QUANT = 16
     CHANNELSTRING = 'ABCDEFGH'
     NEW_MIN_QUANT = 32
     FILE_NAME_TEMPLATE = '{hash}.csv'
@@ -66,9 +50,7 @@ class FixedStructureProgram(ABC):
         self._hardware_setup = hardware_setup
         self._seqc_body = None
         
-        self._loop_obj = final_pt.create_program(parameters=parameters,
-                                                 #measurement_mapping=measurement_mapping#need no mapping
-                                                 )
+        self._loop_obj = final_pt.create_program(parameters=parameters)
         
         self.original = self._loop_obj
         
@@ -77,10 +59,6 @@ class FixedStructureProgram(ABC):
             self.register_measurements(measurement_channels, list(final_pt.measurement_names))
         self._measurement_result = None
         
-        # FixedStructureProgramParent = type("FixedStructureProgramParent", (self._loop_obj.__class__,ABC), {})
-        ### self.__class__ = type("FixedStructureProgram", (FixedStructureProgramParent,), {})
-        # self.__class__ = type(self.__class__.__name__, (FixedStructureProgram,FixedStructureProgramParent,), {})
-
         loop_method_list = [method_name for method_name in dir(self._loop_obj.__class__) if callable(getattr(self._loop_obj.__class__, method_name)) and not method_name.startswith("__")]
         loop_attribute_list = [method_name for method_name in dir(self._loop_obj.__class__) if not callable(getattr(self._loop_obj.__class__, method_name)) and not method_name.startswith("__")]
 
@@ -89,17 +67,12 @@ class FixedStructureProgram(ABC):
         for name in loop_attribute_list:
             self.add_loop_attribute(name)
         
-        # for attr_name in dir(self.original):
-        #     if not attr_name.startswith("__"):
-        #         attr = getattr(self.original, attr_name)
-        #         if callable(attr):
-        #             setattr(self, attr_name, lambda *args, **kwargs: getattr(self.original, attr_name)(*args, **kwargs))
-        #         else:
-        #             setattr(self, attr_name, attr)
-        
-        #TODO: remove if already registered (should be just .remove_prgoram); but is it clean?
-        #TODO: run_callback
+
+        #TODO: remove if already registered (should be just .remove_prgoram); but is it clean? - seems to work
+        #TODO: run_callback - seems to work 
         #TODO: if not auto registered with this run_callback, plot func will not display correct result as not measure_program called automatically?
+        #TODO: some weird error about "arming program without operations".... appears when adding with same name. perhaps some bug in qupulse/alazar.py?
+
         if auto_register:
             self._hardware_setup.remove_program(self.name)
             self._hardware_setup.register_program(self.name,self,run_callback=self.run_func)
@@ -113,11 +86,6 @@ class FixedStructureProgram(ABC):
     def add_loop_attribute(self,attribute_name):
         setattr(self.__class__,attribute_name,eval('self._loop_obj.'+attribute_name))
         return
-    
-    # def get_depth_first_iterator(self):
-    #     return self._loop_obj.get_depth_first_iterator()
-    
-    # def get_measurement_windows(self)
     
     def run_func(self):
         print("I'm executed")
@@ -144,7 +112,6 @@ class FixedStructureProgram(ABC):
     @abstractmethod
     def waveform_dict(self) -> dict:
         pass
-        
     
     @abstractmethod
     def expand_ct(self,
@@ -164,8 +131,6 @@ class FixedStructureProgram(ABC):
     @abstractmethod
     def plot_all_measurements(self):
         pass
-        
-    
     
     def measure_program(self) -> dict:
         self._measurement_result = self._dac.measure_program()
@@ -187,10 +152,7 @@ class FixedStructureProgram(ABC):
                 self._dac.register_mask_for_channel(id_string, self.ALAZAR_CHANNELS.find(channel))
                 operations.append(Downsample(id_string,id_string))
                 # operations.append(ChunkedAverage(id_string,id_string,chunkSize=100))
-        
-       
-        
-        #separate loop required cause only settable after registering?
+
         for i,mask in enumerate(mask_list):
             self._hardware_setup.set_measurement(mask,
                                                  [MeasurementMask(self._dac, f'{mask}{channel}') for channel in measurement_channels],
@@ -202,10 +164,6 @@ class FixedStructureProgram(ABC):
     #TODO:
     def pt_to_binaries(self,pt,parameters,
                        ) -> tuple[BinaryWaveform]:
-        
-        
-        #TODO: correct? channels was tuple of len 8 (with None if not defined) when program was instantiated
-        
 
         def get_default_info(awg):
             return ([None] * awg.num_channels,
@@ -221,9 +179,7 @@ class FixedStructureProgram(ABC):
                     voltage_trafos[single_channel.channel_on_awg] = single_channel.voltage_transformation
                 elif isinstance(single_channel, MarkerChannel):
                     marker_ids[single_channel.channel_on_awg] = channel_id
-        
-        
-        
+
         loop = pt.create_program(parameters=parameters)
         
         # from awg.upload
@@ -272,6 +228,7 @@ class FixedStructureProgram(ABC):
         
         return wf.as_binary()
  
+    
 class SimpleChargeScanProgram(FixedStructureProgram):
     
     '''
@@ -296,6 +253,7 @@ class SimpleChargeScanProgram(FixedStructureProgram):
                  auto_register: bool = True,
                  #TODO: measurements
                  ):
+        
         self.parameters_scsp = parameters
         self._inner_pt = inner_pt
         self._non_looped_constant_vals = non_looped_constant_vals
@@ -754,64 +712,3 @@ def assert_no_key_in_list(dictionary, strings):
         assert key not in strings, f"Channel '{key}' is a looped channel."
 
 
-###############################################################################
-    
-def get_cs_seqc(t_point,
-                start_amp_1=0,end_amp_1=1.,n_points_1=10,
-                start_amp_2=0,end_amp_2=1.,n_points_2=10,
-                ):
-
-    SAMPLE_RATE, WAVEFORM_QUANT = 2.4e9, 16
-    
-    def round_to_multiple(number, multiple):
-        return multiple * round(number / multiple)
-    
-    N_hold = round_to_multiple(max(32,int(t_point*SAMPLE_RATE-32)),WAVEFORM_QUANT)
-    
-    delta_amp_1, delta_amp_2 = (end_amp_1-start_amp_1)/n_points_1, (end_amp_2-start_amp_2)/n_points_2
-    
-    seqc_charge_scan = f"""\
-    cvar amp_1; cvar amp_2;
-    for (amp_1={start_amp_1};amp_1<={end_amp_1};amp_1=amp_1+{delta_amp_1}) {{
-        for (amp_2={start_amp_2};amp_2<={end_amp_2};amp_2=amp_2+{delta_amp_2}) {{
-            playWave(amp_1*ones(32),amp_2*ones(32));
-            playHold({N_hold});
-        }}
-    }}
-    
-    """
-
-
-    return textwrap.indent(textwrap.dedent(seqc_charge_scan),"  ")
-
-a = get_cs_seqc(1e-3)
-
-
-
-def get_waveform_seqc(t_point,
-                start_amp_1=0,end_amp_1=1.,n_points_1=10,
-                start_amp_2=0,end_amp_2=1.,n_points_2=10,
-                ):
-
-    SAMPLE_RATE, WAVEFORM_QUANT = 2.4e9, 16
-    
-    def round_to_multiple(number, multiple):
-        return multiple * round(number / multiple)
-    
-    N_hold = round_to_multiple(max(32,int(t_point*SAMPLE_RATE-32)),WAVEFORM_QUANT)
-    
-    delta_amp_1, delta_amp_2 = (end_amp_1-start_amp_1)/n_points_1, (end_amp_2-start_amp_2)/n_points_2
-    
-    seqc_charge_scan = f"""\
-    cvar amp_1; cvar amp_2;
-    for (amp_1={start_amp_1};amp_1<={end_amp_1};amp_1=amp_1+{delta_amp_1}) {{
-        for (amp_2={start_amp_2};amp_2<={end_amp_2};amp_2=amp_2+{delta_amp_2}) {{
-            playWave(amp_1*ones(32),amp_2*ones(32));
-            playHold({N_hold});
-        }}
-    }}
-    
-    """
-
-
-    return textwrap.indent(textwrap.dedent(seqc_charge_scan),"  ")
