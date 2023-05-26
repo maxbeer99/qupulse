@@ -120,6 +120,7 @@ class HDAWGRepresentation:
         if reset:
             # Create a base configuration: Disable all available outputs, awgs, demods, scopes,...
             #TODO: this currently creates errors when the sequencer is running as waveforms are deleted. need to disable sequencer separately?
+            self.disable_all_sequencers()
             zhinst.utils.disable_everything(self.api_session, self.serial)
 
         self._initialize()
@@ -153,7 +154,13 @@ class HDAWGRepresentation:
         # activates channel groups
         # TODO: sometimes weird behavior with MDS? does this code always do what it is intended for?
         self.channel_grouping = grouping
-
+        
+    def disable_all_sequencers(self):
+        for i in range(4):
+            node_path = '/{}/awgs/{:d}/enable'.format(self.serial, i)
+            self.api_session.setInt(node_path, 0)
+            self.api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
+            
     @property
     def waveform_file_system(self) -> WaveformFileSystem:
         return self._waveform_file_system
@@ -200,6 +207,8 @@ class HDAWGRepresentation:
         self.api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
 
     def reset(self) -> None:
+        #TODO: is this intended behavior that sequencer still running? add disable now.
+        self.disable_all_sequencers()
         zhinst.utils.disable_everything(self.api_session, self.serial)
         self._initialize()
         for tuple in self.channel_tuples:
@@ -630,6 +639,7 @@ class HDAWGChannelGroup(AWG):
         self._program_manager.clear()
         self._current_program = None
         self._required_seqc_source = self._program_manager.to_seqc_program()
+        self._current_ct_tuple = tuple(['']*4)
         self._start_compile_and_upload()
         self.arm(None)
     
