@@ -286,11 +286,12 @@ class WaveformMemory:
                                          ('sample_rate',int),
                                          ])
 
-    def __init__(self):
+    def __init__(self,awg_obj):
         self.shared_waveforms = OrderedDict()  # type: MutableMapping[BinaryWaveform, set]
         self.concatenated_waveforms_subdivided = {} # dict should now automatically be ordered #Dict[str,List[Tuple[BinaryWaveform]]]
         self.concatenated_waveforms_subdivided_info = {} #Dict[str,Tuple[int,int]]
         self.fsp_waveforms = {}
+        self._awg = awg_obj
         self._zhinst_waveforms_tuple = tuple([Waveforms() for i in range(4)])
         
     def clear(self):
@@ -347,7 +348,7 @@ class WaveformMemory:
             binary_waveform: BinaryWaveform
         
         for program_name, (declaration_func,name_iter) in self.fsp_waveforms.items():
-            for wf_name, binary in name_iter():
+            for wf_name, binary in name_iter(self._awg):
                 yield ShortInfo(self.FILE_NAME_TEMPLATE.format(hash=wf_name),binary)
         
                 
@@ -462,8 +463,8 @@ class WaveformMemory:
         for program_name, (declaration_func,name_iter) in self.fsp_waveforms.items():
             
             self.program_pos_var_start[program_name] = ct_index
-            wf_decl_string, ct_index, wave_table_index = \
-                declaration_func(ct_tuple,ct_start_index=ct_index,wf_start_index=wave_table_index,
+            wf_decl_string, ct_index, wave_table_index, ct_tuple, self._zhinst_waveforms_tuple = \
+                declaration_func(self._awg,ct_tuple,ct_start_index=ct_index,wf_start_index=wave_table_index,
                                  waveforms_tuple = self._zhinst_waveforms_tuple
                                  )
                 
@@ -475,7 +476,7 @@ class WaveformMemory:
             
         joined_str = '\n'.join(declarations)
         
-        return joined_str
+        return joined_str, ct_tuple
 
     def sync_to_file_system(self, file_system: WaveformFileSystem):
         to_save = {wave_info.file_name: wave_info.binary_waveform
@@ -882,8 +883,9 @@ class HDAWGProgramManager:
             program_name = make_valid_identifier(program_name)
         return cls._PROGRAM_FUNCTION_NAME_TEMPLATE.format(program_name=program_name)
 
-    def __init__(self,schema_tuple_func):
-        self._waveform_memory = WaveformMemory()
+    def __init__(self,awg_obj,schema_tuple_func):
+        self._awg = awg_obj
+        self._waveform_memory = WaveformMemory(self._awg)
         self._ct_schema_tuple_func = schema_tuple_func
         self._ct_tuple = None
         self._programs = OrderedDict()  # type: MutableMapping[str, HDAWGProgramEntry]
@@ -1044,7 +1046,8 @@ class HDAWGProgramManager:
                 const_repr = const_val.to_seqc()
             lines.append('const {const_name} = {const_repr};'.format(const_name=const_name, const_repr=const_repr))
         
-        lines.append(self._waveform_memory.waveform_declaration(self._ct_tuple))
+        wf_lines, self._ct_tuple = self._waveform_memory.waveform_declaration(self._ct_tuple)
+        lines.append(wf_lines)
         
         lines.append('\n// function used by manually triggered programs')
         lines.append(self.SOFTWARE_WAIT_FOR_TRIGGER_FUNCTION_DEFINITION)

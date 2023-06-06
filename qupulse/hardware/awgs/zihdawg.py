@@ -412,7 +412,7 @@ class HDAWGChannelGroup(AWG):
         self.timeout = timeout
 
         self._awg_module = None
-        self._program_manager = HDAWGProgramManager(self.get_ct_schemata)
+        self._program_manager = HDAWGProgramManager(self,self.get_ct_schemata)
         self._elf_manager = None
         self._required_seqc_source = self._program_manager.to_seqc_program()
         self._uploaded_seqc_source = None
@@ -562,13 +562,16 @@ class HDAWGChannelGroup(AWG):
         
         self._wait_for_compile_and_upload_elf()
         
-        self._program_manager._waveform_memory._zhinst_waveforms_tuple
+        # print(self._program_manager._waveform_memory._zhinst_waveforms_tuple)
         #TODO: this should be the most time-consuming here...
         with self._master_device._device.set_transaction():
             for i in range(4):
                 self._master_device._device.awgs[i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
         self._upload_ct_tuple(self._current_ct_tuple)
+        
+        #TODO: sometimes there seemed to be an error with upload - why?
+        time.sleep(2.0)
         
         #!!! does this mean everything uploaded? check others too, or not relevant if grouped / potentially harmful?
         self._master_device._device.awgs[0].ready.wait_for_state_change(1,timeout=self.timeout)
@@ -687,8 +690,9 @@ class HDAWGChannelGroup(AWG):
                 self._required_seqc_source = self._program_manager.to_seqc_program(name)
             self._start_compile_and_upload()
 
-        if self._required_seqc_source != self._uploaded_seqc_source:
-            self._wait_for_compile_and_upload()
+        # if self._required_seqc_source != self._uploaded_seqc_source:
+        #!!! does this break if it's already equal? should not...
+        self._wait_for_compile_and_upload()
 
         self.user_register(self._program_manager.Constants.TRIGGER_REGISTER, 0)
 
