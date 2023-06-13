@@ -387,22 +387,22 @@ class WaveformMemory:
             
         
     
-    def fill_ct_tuple(self,ct_tuple):
+    def fill_ct_dict(self,ct_dict):
 
-        for i,ct in enumerate(ct_tuple):
+        for i,ct_key in enumerate(ct_dict.keys()):
             for (ct_idx,info_tuple) in self.ct_info_link.items():
                 
                 #this is not addressing the underlying problem as also only ~1000 entries in the command table can be made. 
                 #(currently one-to-one correspondence between table and waveforms, which is bad, but cannot be done otherwise?
                 # on the other hand, number of sequencer instructions are now possible up to ~16000)
                 #manual claims this could be faster than playWave nonetheless
-                ct.table[ct_idx].waveform.index = int(info_tuple[0][i])
-                ct.table[ct_idx].waveform.length = int(info_tuple[1])
-                ct.table[ct_idx].waveform.samplingRateDivider = int(info_tuple[2])
+                ct_dict[ct_key].table[ct_idx].waveform.index = int(info_tuple[0][i])
+                ct_dict[ct_key].table[ct_idx].waveform.length = int(info_tuple[1])
+                ct_dict[ct_key].table[ct_idx].waveform.samplingRateDivider = int(info_tuple[2])
             
-        return ct_tuple
+        return ct_dict
     
-    def waveform_declaration(self,ct_tuple) -> str:
+    def waveform_declaration(self,ct_dict) -> str:
         """Produces a string that declares all needed waveforms.
         It is needed to know the waveform index in case we want to update a waveform during playback."""
         declarations = []
@@ -463,8 +463,8 @@ class WaveformMemory:
         for program_name, (declaration_func,name_iter) in self.fsp_waveforms.items():
             
             self.program_pos_var_start[program_name] = ct_index
-            wf_decl_string, ct_index, wave_table_index, ct_tuple, self._zhinst_waveforms_tuple = \
-                declaration_func(self._awg,ct_tuple,ct_start_index=ct_index,wf_start_index=wave_table_index,
+            wf_decl_string, ct_index, wave_table_index, self._zhinst_waveforms_tuple = \
+                declaration_func(self._awg,ct_dict,ct_start_index=ct_index,wf_start_index=wave_table_index,
                                  waveforms_tuple = self._zhinst_waveforms_tuple
                                  )
                 
@@ -476,7 +476,7 @@ class WaveformMemory:
             
         joined_str = '\n'.join(declarations)
         
-        return joined_str, ct_tuple
+        return joined_str
 
     def sync_to_file_system(self, file_system: WaveformFileSystem):
         to_save = {wave_info.file_name: wave_info.binary_waveform
@@ -701,7 +701,7 @@ class HDAWGProgramEntry(ProgramEntry):
         self._var_declarations = None
         self._user_registers = None
         self._user_register_source = None
-        self._ct_tuple = command_tables
+        self._ct_dict = command_tables
         self.append_seqc_snippet = append_seqc_snippet
         
     def compile(self,
@@ -809,16 +809,17 @@ class HDAWGProgramManager:
     the required waveforms to the file system. It does not talk to the device."""
 
     class Constants:
+        INTEGER_SIZE = 8 #somehow, despite the manual claiming 64 bits, the USERREG creates playback issues before that. so change previous 32 to 16 for safety
         PROG_SEL_REGISTER = UserRegister(zero_based_value=0)
         TRIGGER_REGISTER = UserRegister(zero_based_value=1)
-        TRIGGER_RESET_MASK = bin(1 << 31)
+        TRIGGER_RESET_MASK = bin(1 << INTEGER_SIZE-1)
         PROG_SEL_NONE = 0
         # if not set the register is set to PROG_SEL_NONE
-        NO_RESET_MASK = bin(1 << 31)
+        NO_RESET_MASK = bin(1 << INTEGER_SIZE-1)
         # set to one if playback finished
-        PLAYBACK_FINISHED_MASK = bin(1 << 30)
-        PROG_SEL_MASK = bin((1 << 30) - 1)
-        INVERTED_PROG_SEL_MASK = bin(((1 << 32) - 1) ^ int(PROG_SEL_MASK, 2))
+        PLAYBACK_FINISHED_MASK = bin(1 << INTEGER_SIZE-2)
+        PROG_SEL_MASK = bin((1 << INTEGER_SIZE-2) - 1)
+        INVERTED_PROG_SEL_MASK = bin(((1 << INTEGER_SIZE) - 1) ^ int(PROG_SEL_MASK, 2))
         IDLE_WAIT_CYCLES = 300
 
         @classmethod
@@ -836,7 +837,7 @@ class HDAWGProgramManager:
                          'Used to signal that at least one program was played completely.'), 0)
         PLAYBACK_FINISHED = (('Is OR\'ed to new_prog_sel.',
                               'Set to PLAYBACK_FINISHED_MASK if a program was played completely.',), 0)
-
+        
         @classmethod
         def as_dict(cls) -> Dict[str, Tuple[Sequence[str], int]]:
             return {name: value
@@ -887,7 +888,7 @@ class HDAWGProgramManager:
         self._awg = awg_obj
         self._waveform_memory = WaveformMemory(self._awg)
         self._ct_schema_tuple_func = schema_tuple_func
-        self._ct_tuple = None
+        self._ct_dict = None
         self._programs = OrderedDict()  # type: MutableMapping[str, HDAWGProgramEntry]
         self._compiler_settings = [
             # default settings: None -> take cls value
@@ -948,8 +949,8 @@ class HDAWGProgramManager:
         """
         assert name not in self._programs
         
-        if self._ct_tuple is None:
-            self._ct_tuple = tuple([CommandTable(s) for s in self._ct_schema_tuple_func()])
+        if self._ct_dict is None:
+            self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func())}
         
         selection_index = self._get_low_unused_index()
 
@@ -958,7 +959,7 @@ class HDAWGProgramManager:
 
         program_entry = HDAWGProgramEntry(loop, selection_index, self._waveform_memory, name,
                                           channels, markers, amplitudes, offsets, voltage_transformations, sample_rate,
-                                          self._ct_tuple,
+                                          self._ct_dict,
                                           append_seqc_snippet
                                           )
 
@@ -1046,7 +1047,7 @@ class HDAWGProgramManager:
                 const_repr = const_val.to_seqc()
             lines.append('const {const_name} = {const_repr};'.format(const_name=const_name, const_repr=const_repr))
         
-        wf_lines, self._ct_tuple = self._waveform_memory.waveform_declaration(self._ct_tuple)
+        wf_lines = self._waveform_memory.waveform_declaration(self._ct_dict)
         lines.append(wf_lines)
         
         lines.append('\n// function used by manually triggered programs')
@@ -1079,11 +1080,13 @@ class HDAWGProgramManager:
         
         return '\n'.join(lines)
 
-    def finalize_ct_tuple(self) -> str:
-        ct_t = self._ct_tuple
-        ct_t = self._waveform_memory.fill_ct_tuple(ct_t)
+    def finalize_ct_dict(self) -> str:
+        
+        #TODO: might need reset before?
+        ct_t = self._ct_dict
+        ct_t = self._waveform_memory.fill_ct_dict(ct_t)
 
-        return tuple([json.dumps(ct.as_dict()) for ct in ct_t])
+        return {i:json.dumps(ct.as_dict()) for i,ct in enumerate(ct_t.values())}
         
 
 def find_sharable_waveforms(node_cluster: Sequence['SEQCNode']) -> Optional[Sequence[bool]]:
@@ -1686,13 +1689,16 @@ while (true) {{
   // only use part of prog sel that does not mean other things to select the program.
   prog_sel &= PROG_SEL_MASK;
   
+  // The HDAWG is apparently not a Swiss clock after all and has trouble being on time (for USERREG operations).
+  // Therefore, resort to extra waiting cycle.
+  wait(IDLE_WAIT_CYCLES);
+  
   switch (prog_sel) {{
 {program_cases}
     default:
       wait(IDLE_WAIT_CYCLES);
   }}
 }}"""
-
 
 
 _PROGRAM_SELECTION_CASE = """\

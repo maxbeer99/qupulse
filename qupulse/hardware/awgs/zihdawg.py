@@ -542,7 +542,7 @@ class HDAWGChannelGroup(AWG):
         self._program_manager.waveform_memory.sync_to_file_system(self.master_device.waveform_file_system)
         
         #needs to be uploaded only after everything else (elf-upload) done
-        self._current_ct_tuple = self._program_manager.finalize_ct_tuple()
+        self._current_ct_dict = self._program_manager.finalize_ct_dict()
         
         # start compiling the source (non-blocking)
         self._start_compile_and_upload()
@@ -555,7 +555,7 @@ class HDAWGChannelGroup(AWG):
         for state in self._upload_generator:
             logger.debug("wait_for_compile_and_upload: %r", state)
             time.sleep(.1)
-        self._uploaded_seqc_source = self._required_seqc_source
+        
         logger.debug("AWG %d: wait_for_compile_and_upload has finished", self.awg_group_index)
 
     def _wait_for_compile_and_upload(self):
@@ -568,13 +568,18 @@ class HDAWGChannelGroup(AWG):
             for i in range(4):
                 self._master_device._device.awgs[i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
-        self._upload_ct_tuple(self._current_ct_tuple)
+        print(self._current_ct_dict)
+        
+        self._upload_ct_dict(self._current_ct_dict)
         
         #TODO: sometimes there seemed to be an error with upload - why?
         time.sleep(2.0)
         
         #!!! does this mean everything uploaded? check others too, or not relevant if grouped / potentially harmful?
         self._master_device._device.awgs[0].ready.wait_for_state_change(1,timeout=self.timeout)
+        
+        #only after everything done set correctly.
+        self._uploaded_seqc_source = self._required_seqc_source
 
     def set_sample_rate_num(self,sample_rate_num: int):
         assert type(sample_rate_num)==int, 'Must be integer'
@@ -605,8 +610,8 @@ class HDAWGChannelGroup(AWG):
     def get_ct_schemata(self, idx: tuple=(0,1,2,3)) -> Tuple[str]:
         return tuple([self.get_commandtable_schema(i) for i in idx])
     
-    def _upload_ct_tuple(self, ct_tuple: Tuple[str]):
-        for i,ct in enumerate(ct_tuple):
+    def _upload_ct_dict(self, ct_dict: Dict[int,str]):
+        for i,ct in enumerate(ct_dict.values()):
             node_base_path = '/{}/awgs/{}'.format(self.master_device.serial, i)
             self.master_device.api_session.set(node_base_path+'/commandtable/data', ct)
     
@@ -642,7 +647,7 @@ class HDAWGChannelGroup(AWG):
         self._program_manager.clear()
         self._current_program = None
         self._required_seqc_source = self._program_manager.to_seqc_program()
-        self._current_ct_tuple = tuple(['']*4)
+        self._current_ct_dict = {0:'',1:'',2:'',3:''}
         self._start_compile_and_upload()
         self.arm(None)
     
@@ -690,9 +695,10 @@ class HDAWGChannelGroup(AWG):
                 self._required_seqc_source = self._program_manager.to_seqc_program(name)
             self._start_compile_and_upload()
 
-        # if self._required_seqc_source != self._uploaded_seqc_source:
+        if self._required_seqc_source != self._uploaded_seqc_source:
         #!!! does this break if it's already equal? should not...
-        self._wait_for_compile_and_upload()
+        #TODO: clear_program does not work yet somehow...
+            self._wait_for_compile_and_upload()
 
         self.user_register(self._program_manager.Constants.TRIGGER_REGISTER, 0)
 
