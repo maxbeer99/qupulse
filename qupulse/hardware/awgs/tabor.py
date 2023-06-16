@@ -360,8 +360,7 @@ class TaborChannelPair(AWG):
                                                         )
         #To be changed hackily later on after init, as dict with just one key: {'1': int, '2':int,'12':int, 'None':int}
         # (include 'None' key for sync with other pairs where some marker is played)
-        self._prepend_marked_192_segments = None
-        # self._advance_idle_sequence_marked_table
+        self._prepend_marked_3x192_segments = None
         
         self._idle_sequence_table = [(1, 1, 0), (1, 1, 0), (1, 1, 0)]
 
@@ -565,36 +564,36 @@ class TaborChannelPair(AWG):
         self.device.send_cmd(':TRAC:MODE COMB', paranoia_level=self.internal_paranoia_level)
         self.device.send_binary_data(pref=':TRAC:DATA', bin_dat=self._idle_segment.get_as_binary())
 
-        self._segment_lengths = 192*np.ones(1, dtype=np.uint32)
-        self._segment_capacity = 192*np.ones(1, dtype=np.uint32)
-        self._segment_hashes = np.ones(1, dtype=np.int64) * hash(self._idle_segment)
-        self._segment_references = np.ones(1, dtype=np.uint32)
+        # self._segment_lengths = 192*np.ones(1, dtype=np.uint32)
+        # self._segment_capacity = 192*np.ones(1, dtype=np.uint32)
+        # self._segment_hashes = np.ones(1, dtype=np.int64) * hash(self._idle_segment)
+        # self._segment_references = np.ones(1, dtype=np.uint32)
         
         # hack in further idle-segments:
-        # time.sleep(0.5)
-        # self.device.send_cmd(':TRAC:DEF 2, 192', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_cmd(':TRAC:SEL 2', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_cmd(':TRAC:MODE COMB', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_binary_data(pref=':TRAC:DATA', bin_dat=self._idle_segment_marked_ch1.get_as_binary())
+        time.sleep(0.2)
+        self.device.send_cmd(':TRAC:DEF 2, 192', paranoia_level=self.internal_paranoia_level)
+        self.device.send_cmd(':TRAC:SEL 2', paranoia_level=self.internal_paranoia_level)
+        self.device.send_cmd(':TRAC:MODE COMB', paranoia_level=self.internal_paranoia_level)
+        self.device.send_binary_data(pref=':TRAC:DATA', bin_dat=self._idle_segment_marked_ch1.get_as_binary())
         
-        # time.sleep(0.5)
-        # self.device.send_cmd(':TRAC:DEF 3, 192', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_cmd(':TRAC:SEL 3', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_cmd(':TRAC:MODE COMB', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_binary_data(pref=':TRAC:DATA', bin_dat=self._idle_segment_marked_ch2.get_as_binary())
+        time.sleep(0.2)
+        self.device.send_cmd(':TRAC:DEF 3, 192', paranoia_level=self.internal_paranoia_level)
+        self.device.send_cmd(':TRAC:SEL 3', paranoia_level=self.internal_paranoia_level)
+        self.device.send_cmd(':TRAC:MODE COMB', paranoia_level=self.internal_paranoia_level)
+        self.device.send_binary_data(pref=':TRAC:DATA', bin_dat=self._idle_segment_marked_ch2.get_as_binary())
         
-        # time.sleep(0.5)
-        # self.device.send_cmd(':TRAC:DEF 4, 192', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_cmd(':TRAC:SEL 4', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_cmd(':TRAC:MODE COMB', paranoia_level=self.internal_paranoia_level)
-        # self.device.send_binary_data(pref=':TRAC:DATA', bin_dat=self._idle_segment_marked_ch12.get_as_binary())
+        time.sleep(0.2)
+        self.device.send_cmd(':TRAC:DEF 4, 192', paranoia_level=self.internal_paranoia_level)
+        self.device.send_cmd(':TRAC:SEL 4', paranoia_level=self.internal_paranoia_level)
+        self.device.send_cmd(':TRAC:MODE COMB', paranoia_level=self.internal_paranoia_level)
+        self.device.send_binary_data(pref=':TRAC:DATA', bin_dat=self._idle_segment_marked_ch12.get_as_binary())
         
-        # #probably need to increase to "4" here...
-        # self._segment_lengths = 192*np.ones(4, dtype=np.uint32)
-        # self._segment_capacity = 192*np.ones(4, dtype=np.uint32)
-        # self._segment_hashes = np.array([hash(self._idle_segment),hash(self._idle_segment_marked_ch1),
-        #                                   hash(self._idle_segment_marked_ch2),hash(self._idle_segment_marked_ch12)], dtype=np.int64)
-        # self._segment_references = np.ones(4, dtype=np.uint32)
+        #probably need to increase to "4" here...
+        self._segment_lengths = 192*np.ones(4, dtype=np.uint32)
+        self._segment_capacity = 192*np.ones(4, dtype=np.uint32)
+        self._segment_hashes = np.array([hash(self._idle_segment),hash(self._idle_segment_marked_ch1),
+                                          hash(self._idle_segment_marked_ch2),hash(self._idle_segment_marked_ch12)], dtype=np.int64)
+        self._segment_references = np.ones(4, dtype=np.uint32)
         
         self._advanced_sequence_table = []
         self._sequencer_tables = []
@@ -882,39 +881,46 @@ class TaborChannelPair(AWG):
             sequencer_tables = [[(rep_count, waveform_to_segment_number[wf_index], jump_flag)
                                  for ((rep_count, wf_index, jump_flag), _) in sequencer_table]
                                 for sequencer_table in program.get_sequencer_tables()]
-
-            # insert idle sequence
+                    
             sequencer_tables = [self._idle_sequence_table] + sequencer_tables
-
+            
+            # insert idle sequence & possibly post-trigger-marker
+            if self._prepend_marked_3x192_segments is not None:
+                assert len(self._prepend_marked_3x192_segments.keys())==1, 'wrong number of keys'
+                if '1' in self._prepend_marked_3x192_segments:
+                    sequencer_tables.insert(1,[(self._prepend_marked_3x192_segments['1'], 2, 0)]*3)
+                if '2' in self._prepend_marked_3x192_segments:
+                    sequencer_tables.insert(1,[(self._prepend_marked_3x192_segments['2'], 3, 0)]*3)
+                if '12' in self._prepend_marked_3x192_segments:
+                    sequencer_tables.insert(1,[(self._prepend_marked_3x192_segments['12'], 4, 0)]*3)
+                if 'None' in self._prepend_marked_3x192_segments:
+                    sequencer_tables.insert(1,[(self._prepend_marked_3x192_segments['None'], 1, 0)]*3)
+            
             # adjust advanced sequence table entries by idle sequence table offset
-            # !!! due to hacking in three more idle seqs, the + 1 should be changed to + 4
-            # advanced_sequencer_table = [(rep_count, seq_no + 4, jump_flag)
-            #                             for rep_count, seq_no, jump_flag in program.get_advanced_sequencer_table()]
-            advanced_sequencer_table = [(rep_count, seq_no + 1, jump_flag)
-                            for rep_count, seq_no, jump_flag in program.get_advanced_sequencer_table()]
-
+            # !!! due to hacking in three more idle seqs, the + 1 should be changed to + 2
+                advanced_sequencer_table = [(rep_count, seq_no + 2, jump_flag)
+                                            for rep_count, seq_no, jump_flag in program.get_advanced_sequencer_table()]
+            else:
+                advanced_sequencer_table = [(rep_count, seq_no + 1, jump_flag)
+                                            for rep_count, seq_no, jump_flag in program.get_advanced_sequencer_table()]
+            
             if program.waveform_mode == TaborSequencing.SINGLE:
                 assert len(advanced_sequencer_table) == 1
-                assert len(sequencer_tables) == 2
-
-                while len(sequencer_tables[1]) < self.device.dev_properties['min_seq_len']:
-                    assert advanced_sequencer_table[0][0] == 1
-                    sequencer_tables[1].append((1, 1, 0))
-
-        # insert idle sequence in advanced sequence table
-        if self._prepend_marked_192_segments is not None:
-            assert len(self._prepend_marked_192_segments.keys())==1, 'wrong number of keys'
-            if '1' in self._prepend_marked_192_segments:
-                advanced_sequencer_table = [(1, 1, 1)] + [(self._prepend_marked_192_segments['1'], 2, 0)] + advanced_sequencer_table
-            if '2' in self._prepend_marked_192_segments:
-                advanced_sequencer_table = [(1, 1, 1)] + [(self._prepend_marked_192_segments['2'], 3, 0)] + advanced_sequencer_table
-            if '12' in self._prepend_marked_192_segments:
-                advanced_sequencer_table = [(1, 1, 1)] + [(self._prepend_marked_192_segments['12'], 4, 0)] + advanced_sequencer_table
-            if 'None' in self._prepend_marked_192_segments:
-                advanced_sequencer_table = [(1, 1, 1)] + [(self._prepend_marked_192_segments['None'], 1, 0)] + advanced_sequencer_table
+                if self._prepend_marked_3x192_segments is not None:
+                    assert len(sequencer_tables) == 3
+                    while len(sequencer_tables[2]) < self.device.dev_properties['min_seq_len']:
+                        assert advanced_sequencer_table[0][0] == 1
+                        sequencer_tables[2].append((1, 1, 0))
+                else:
+                    assert len(sequencer_tables) == 2
+                    while len(sequencer_tables[1]) < self.device.dev_properties['min_seq_len']:
+                        assert advanced_sequencer_table[0][0] == 1
+                        sequencer_tables[1].append((1, 1, 0))
+            
+        if self._prepend_marked_3x192_segments is not None:
+            advanced_sequencer_table = [(1, 1, 1)] + [(1, 2, 0)] + advanced_sequencer_table
         else:
             advanced_sequencer_table = [(1, 1, 1)] + advanced_sequencer_table
-
 
         while len(advanced_sequencer_table) < self.device.dev_properties['min_aseq_len']:
             advanced_sequencer_table.append((1, 1, 0))
