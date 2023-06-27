@@ -535,7 +535,7 @@ class HDAWGChannelGroup(AWG):
                                           offsets=voltage_offsets,
                                           append_seqc_snippet=self.append_seqc_snippet,
                                           )
-        
+
         self._required_seqc_source = self._program_manager.to_seqc_program()
         
         #TODO: may be omitted if placeholder wfs used, perhaps faster?
@@ -617,11 +617,8 @@ class HDAWGChannelGroup(AWG):
     
     def was_current_program_finished(self) -> bool:
         """Return true if the current program has finished at least once"""
-        # playback_finished_mask = int(HDAWGProgramManager.Constants.PLAYBACK_FINISHED_MASK, 2)
-        # return bool(self.user_register(HDAWGProgramManager.Constants.PROG_SEL_REGISTER) & playback_finished_mask)
-        #TODO: currently disabled.
-        return 'Function currently disabled'
-        # return bool(self.user_register(HDAWGProgramManager.Constants.PROG_SEL_REGISTER)==HDAWGProgramManager.Constants.PLAYBACK_FINISHED_VALUE)
+        playback_finished_mask = int(HDAWGProgramManager.Constants.PLAYBACK_FINISHED_MASK, 2)
+        return bool(self.user_register(HDAWGProgramManager.Constants.PROG_SEL_REGISTER) & playback_finished_mask)
 
     def set_volatile_parameters(self, program_name: str, parameters: Mapping[str, numbers.Real]):
         """Set the values of parameters which were marked as volatile on program creation."""
@@ -691,13 +688,12 @@ class HDAWGChannelGroup(AWG):
         
         # self._prepare_for_DIO()
         
-        #!!! this now is a workaround to avoid playback problems occuring when using the program selection via user reg.
-        # if self.num_channels > 8:
-        if name is None:
-            self._required_seqc_source = ""
-        else:
-            self._required_seqc_source = self._program_manager.to_seqc_program(name)
-        self._start_compile_and_upload()
+        if self.num_channels > 8:
+            if name is None:
+                self._required_seqc_source = ""
+            else:
+                self._required_seqc_source = self._program_manager.to_seqc_program(name)
+            self._start_compile_and_upload()
 
         if self._required_seqc_source != self._uploaded_seqc_source:
         #!!! does this break if it's already equal? should not...
@@ -718,18 +714,12 @@ class HDAWGChannelGroup(AWG):
             # set the registers of initial repetition counts
             for register, value in self._program_manager.get_register_values(name).items():
                 assert register not in (self._program_manager.Constants.PROG_SEL_REGISTER,
-                                        self._program_manager.Constants.TRIGGER_REGISTER,
-                                        # self._program_manager.Constants.PLAYBACK_FINISHED_AND_RESET_REGISTER,
-                                        )
+                                        self._program_manager.Constants.TRIGGER_REGISTER)
                 self.user_register(register, value)
-            
-            #TODO: why is this even here then?
+
             self.user_register(self._program_manager.Constants.PROG_SEL_REGISTER,
-                               # self._program_manager.name_to_index(name) | int(self._program_manager.Constants.NO_RESET_MASK, 2))
-                               self._program_manager.name_to_index(name))
-            # self.user_register(self._program_manager.Constants.PLAYBACK_FINISHED_REGISTER,
-            #                     # self._program_manager.name_to_index(name) | int(self._program_manager.Constants.NO_RESET_MASK, 2))
-            #                     0)
+                               self._program_manager.name_to_index(name) | int(self._program_manager.Constants.NO_RESET_MASK, 2))
+
         # this was a workaround for problems in the past and I totally forgot why it was here
         # for ch_pair in self.master.channel_tuples:
         #    ch_pair._wait_for_compile_and_upload()

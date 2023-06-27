@@ -811,22 +811,16 @@ class HDAWGProgramManager:
 
     class Constants:
         INTEGER_SIZE = 8 #somehow, despite the manual claiming 64 bits, the USERREG creates playback issues before that. so change previous 32 to 16 for safety
-        # HOWEVER, this still induces errors. opt for a different method,
-        # utilize multiple userregs.
         PROG_SEL_REGISTER = UserRegister(zero_based_value=0)
         TRIGGER_REGISTER = UserRegister(zero_based_value=1)
-        PLAYBACK_FINISHED_REGISTER = UserRegister(zero_based_value=2)
         TRIGGER_RESET_MASK = bin(1 << INTEGER_SIZE-1)
         PROG_SEL_NONE = 0
-        PLAYBACK_FINISHED_AT_LEAST_ONCE_VALUE = 1
-        PLAYBACK_NOT_FINISHED_AT_LEAST_ONCE_VALUE = 0
-        RESET_VALUE = 2
-        # # if not set the register is set to PROG_SEL_NONE
-        # NO_RESET_MASK = bin(1 << INTEGER_SIZE-1)
-        # # set to one if playback finished
-        # PLAYBACK_FINISHED_MASK = bin(1 << INTEGER_SIZE-2)
-        # PROG_SEL_MASK = bin((1 << INTEGER_SIZE-2) - 1)
-        # INVERTED_PROG_SEL_MASK = bin(((1 << INTEGER_SIZE) - 1) ^ int(PROG_SEL_MASK, 2))
+        # if not set the register is set to PROG_SEL_NONE
+        NO_RESET_MASK = bin(1 << INTEGER_SIZE-1)
+        # set to one if playback finished
+        PLAYBACK_FINISHED_MASK = bin(1 << INTEGER_SIZE-2)
+        PROG_SEL_MASK = bin((1 << INTEGER_SIZE-2) - 1)
+        INVERTED_PROG_SEL_MASK = bin(((1 << INTEGER_SIZE) - 1) ^ int(PROG_SEL_MASK, 2))
         IDLE_WAIT_CYCLES = 300
 
         @classmethod
@@ -962,8 +956,7 @@ class HDAWGProgramManager:
         selection_index = self._get_low_unused_index()
 
         # TODO: verify total number of registers
-        # available_registers = [UserRegister.from_seqc(idx) for idx in range(2, 16)]
-        available_registers = [UserRegister.from_seqc(idx) for idx in range(3, 16)] #now another one reserved
+        available_registers = [UserRegister.from_seqc(idx) for idx in range(2, 16)]
 
         program_entry = HDAWGProgramEntry(loop, selection_index, self._waveform_memory, name,
                                           channels, markers, amplitudes, offsets, voltage_transformations, sample_rate,
@@ -1681,54 +1674,25 @@ class WaveformPlayback(SEQCNode):
             yield play_cmd + advance_cmd
 
 
-# _PROGRAM_SELECTION_BLOCK = """\
-# while (true) {{
-#   // read program selection value
-#   prog_sel = getUserReg(PROG_SEL_REGISTER);
-  
-#   // calculate value to write back to PROG_SEL_REGISTER
-#   new_prog_sel = prog_sel | playback_finished;
-#   if (!(prog_sel & NO_RESET_MASK)) new_prog_sel &= INVERTED_PROG_SEL_MASK;
-#   setUserReg(PROG_SEL_REGISTER, new_prog_sel);
-  
-#   // reset playback flag
-#   playback_finished = 0;
-  
-#   // only use part of prog sel that does not mean other things to select the program.
-#   prog_sel &= PROG_SEL_MASK;
-  
-#   // The HDAWG is apparently not a Swiss clock after all and has trouble being on time (for USERREG operations).
-#   // Therefore, resort to extra waiting cycle.
-#   wait(IDLE_WAIT_CYCLES);
-  
-#   switch (prog_sel) {{
-# {program_cases}
-#     default:
-#       wait(IDLE_WAIT_CYCLES);
-#   }}
-# }}"""
-
 _PROGRAM_SELECTION_BLOCK = """\
 while (true) {{
   // read program selection value
   prog_sel = getUserReg(PROG_SEL_REGISTER);
-  // playback_finished = getUserReg(PLAYBACK_FINISHED_REGISTER);
-             
-  // calculate value to write back to PROG_SEL_REGISTER
-  // new_prog_sel = prog_sel | playback_finished;
-  // if (!(prog_sel & NO_RESET_MASK)) new_prog_sel &= INVERTED_PROG_SEL_MASK;
   
-  // if (playback_finished==PLAYBACK_FINISHED_AT_LEAST_ONCE_VALUE) prog_sel = PROG_SEL_NONE;
+  // calculate value to write back to PROG_SEL_REGISTER
+  new_prog_sel = prog_sel | playback_finished;
+  if (!(prog_sel & NO_RESET_MASK)) new_prog_sel &= INVERTED_PROG_SEL_MASK;
+  setUserReg(PROG_SEL_REGISTER, new_prog_sel);
   
   // reset playback flag
-  // playback_finished = 0;
+  playback_finished = 0;
   
   // only use part of prog sel that does not mean other things to select the program.
-  // prog_sel &= PROG_SEL_MASK;
+  prog_sel &= PROG_SEL_MASK;
   
-  // //The HDAWG is apparently not a Swiss clock after all and has trouble being on time (for USERREG operations).
-  // //Therefore, resort to extra waiting cycle.
-  // wait(IDLE_WAIT_CYCLES);
+  // The HDAWG is apparently not a Swiss clock after all and has trouble being on time (for USERREG operations).
+  // Therefore, resort to extra waiting cycle.
+  wait(IDLE_WAIT_CYCLES);
   
   switch (prog_sel) {{
 {program_cases}
@@ -1736,14 +1700,13 @@ while (true) {{
       wait(IDLE_WAIT_CYCLES);
   }}
 }}"""
-    
-    
+
+
 _PROGRAM_SELECTION_CASE = """\
     case {selection_index}:
       {program_function_name}();
-      waitWave();"""
-      # for performance reasons, don't even do this as not used...
-      # setUserReg(PLAYBACK_FINISHED_REGISTER, PLAYBACK_FINISHED_AT_LEAST_ONCE_VALUE);"""
+      waitWave();
+      playback_finished = PLAYBACK_FINISHED_MASK;"""
 
 
 def _make_program_selection_block(programs: Iterable[Tuple[int, str]]):
