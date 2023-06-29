@@ -694,10 +694,12 @@ class HDAWGChannelGroup(AWG):
         #!!! this now is a workaround to avoid playback problems occuring when using the program selection via user reg.
         # if self.num_channels > 8:
         if name is None:
-            self._required_seqc_source = ""
+            # self._required_seqc_source = ""
+            self._required_seqc_source = self._program_manager.to_seqc_program()
         else:
             self._required_seqc_source = self._program_manager.to_seqc_program(name)
-        self._start_compile_and_upload()
+        if self._required_seqc_source != self._uploaded_seqc_source:
+            self._start_compile_and_upload()
 
         if self._required_seqc_source != self._uploaded_seqc_source:
         #!!! does this break if it's already equal? should not...
