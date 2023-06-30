@@ -292,14 +292,14 @@ class WaveformMemory:
         self.concatenated_waveforms_subdivided_info = {} #Dict[str,Tuple[int,int]]
         self.fsp_waveforms = {}
         self._awg = awg_obj
-        self._zhinst_waveforms_tuple = tuple([Waveforms() for i in range(4)])
+        self._zhinst_waveforms_tuple = tuple([Waveforms() for i in range(self._awg.num_channels//2)])
         
     def clear(self):
         self.shared_waveforms.clear()
         self.concatenated_waveforms_subdivided.clear()
         self.concatenated_waveforms_subdivided_info.clear()
         self.fsp_waveforms.clear()
-        self._zhinst_waveforms_tuple = tuple([Waveforms() for i in range(4)])
+        self._zhinst_waveforms_tuple = tuple([Waveforms() for i in range(self._awg.num_channels//2)])
 
     def _shared_waveforms_iter(self) -> Iterator[Tuple[str, _WaveInfo]]:
         for wf, program_set in self.shared_waveforms.items():
@@ -407,14 +407,14 @@ class WaveformMemory:
         It is needed to know the waveform index in case we want to update a waveform during playback."""
         declarations = []
         
-        self._zhinst_waveforms_tuple = tuple([Waveforms() for i in range(4)])
+        self._zhinst_waveforms_tuple = tuple([Waveforms() for i in range(self._awg.num_channels//2)])
         
         #careful: if creating the list with [set()]*4, python creates only shallow copies of sets as * repeats the specific object
-        filename_list_list = [set(),set(),set(),set()]
+        filename_list_list = [set() for i in range(self._awg.num_channels//2)]
         
         #this defeats the purpose of having generator object as concatenated waveform iter, but seems like easiest way without changing too much...
 
-        self.original_waveform_declarations_list = [{},{},{},{}]
+        self.original_waveform_declarations_list = [{} for i in range(self._awg.num_channels//2)]
         self.ct_info_link = {}
         self.program_pos_var_start = {}
 
@@ -957,7 +957,7 @@ class HDAWGProgramManager:
         assert name not in self._programs
         
         if self._ct_dict is None:
-            self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func())}
+            self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
         
         selection_index = self._get_low_unused_index()
 

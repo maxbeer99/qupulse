@@ -280,7 +280,7 @@ class HDAWGRepresentation:
         for group in self._get_groups(channel_grouping):
             if not group.is_connected():
                 group.connect_group(self)
-
+        
     @valid_channel
     def offset(self, channel: int, voltage: float = None) -> float:
         """Query channel offset voltage and optionally set it."""
@@ -416,6 +416,7 @@ class HDAWGChannelGroup(AWG):
         self._elf_manager = None
         self._required_seqc_source = self._program_manager.to_seqc_program()
         self._uploaded_seqc_source = None
+        self._current_ct_dict = {i:'' for i in range(self.num_channels//2)}
         self._current_program = None  # Currently armed program.
         self._upload_generator = ()
 
@@ -565,18 +566,18 @@ class HDAWGChannelGroup(AWG):
         # print(self._program_manager._waveform_memory._zhinst_waveforms_tuple)
         #TODO: this should be the most time-consuming here...
         with self._master_device._device.set_transaction():
-            for i in range(4):
-                self._master_device._device.awgs[i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
+            for i in range(self.num_channels//2):
+                self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
-        print(self._current_ct_dict)
+        # print(self._current_ct_dict)
         
         self._upload_ct_dict(self._current_ct_dict)
         
         #TODO: sometimes there seemed to be an error with upload - why?
-        time.sleep(2.0)
+        time.sleep(1.0)
         
         #!!! does this mean everything uploaded? check others too, or not relevant if grouped / potentially harmful?
-        self._master_device._device.awgs[0].ready.wait_for_state_change(1,timeout=self.timeout)
+        self._master_device._device.awgs[self.awg_group_index].ready.wait_for_state_change(1,timeout=self.timeout)
         
         #only after everything done set correctly.
         self._uploaded_seqc_source = self._required_seqc_source
@@ -650,7 +651,7 @@ class HDAWGChannelGroup(AWG):
         self._program_manager.clear()
         self._current_program = None
         self._required_seqc_source = self._program_manager.to_seqc_program()
-        self._current_ct_dict = {0:'',1:'',2:'',3:''}
+        self._current_ct_dict = {i:'' for i in range(self.num_channels//2)}
         self._start_compile_and_upload()
         self.arm(None)
     
@@ -692,7 +693,6 @@ class HDAWGChannelGroup(AWG):
         # self._prepare_for_DIO()
         
         #!!! this now is a workaround to avoid playback problems occuring when using the program selection via user reg.
-        # if self.num_channels > 8:
         if name is None:
             # self._required_seqc_source = ""
             self._required_seqc_source = self._program_manager.to_seqc_program()
@@ -817,15 +817,19 @@ class MDSChannelGroup(HDAWGChannelGroup):
     def __init__(self,
                  identifier: str,
                  timeout: float) -> None:
-        super().__init__(identifier, timeout)
-
+        #change order
         self._master_device = None
         self._mds_devices = None
-
+        
+        super().__init__(identifier, timeout)
+        
     @property
     def num_channels(self) -> int:
         """Number of channels"""
-        return len(self._mds_devices) * 8
+        if self._mds_devices is not None:
+            return len(self._mds_devices) * 8
+        else:
+            return 0
 
     @property
     def awg_group_index(self):
@@ -899,7 +903,8 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
                  group_size: int,
                  identifier: str,
                  timeout: float) -> None:
-        super().__init__(identifier, timeout)
+        
+        #change order
         self._device = None
 
         assert group_idx in range(4)
@@ -907,6 +912,9 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
 
         self._group_idx = group_idx
         self._group_size = group_size
+        
+        super().__init__(identifier, timeout)
+        
 
     @property
     def num_channels(self) -> int:
