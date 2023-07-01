@@ -613,7 +613,7 @@ class HDAWGChannelGroup(AWG):
     
     def _upload_ct_dict(self, ct_dict: Dict[int,str]):
         for i,ct in enumerate(ct_dict.values()):
-            node_base_path = '/{}/awgs/{}'.format(self.master_device.serial, i)
+            node_base_path = '/{}/awgs/{}'.format(self.master_device.serial, self.awg_group_index+i)
             self.master_device.api_session.set(node_base_path+'/commandtable/data', ct)
     
     def was_current_program_finished(self) -> bool:
@@ -658,26 +658,26 @@ class HDAWGChannelGroup(AWG):
     #TODO: this only becomes relevant for self-triggering in the future
     def _prepare_for_DIO(self):
         
-        # node_base = '/{}'.format(self.master_device.serial)
+        node_base = '/{}'.format(self.master_device.serial)
         
-        # self.master_device.api_session.setInt(node_base+'/DIOS/0/MODE',1)
-        # self.master_device.api_session.setInt(node_base+'/DIOS/0/DRIVE',1)
-        # for i in range(4):
-        #     self.master_device.api_session.setInt(node_base+f'/AWGS/{i}/DIO/VALID/POLARITY',2)
-        #     self.master_device.api_session.setInt(node_base+f'/AWGS/{i}/DIO/VALID/INDEX',0)
-        #     self.master_device.api_session.setInt(node_base+f'/AWGS/{i}/DIO/STROBE/SLOPE',0)
+        self.master_device.api_session.setInt(node_base+'/DIOS/0/MODE',1)
+        self.master_device.api_session.setInt(node_base+'/DIOS/0/DRIVE',1)
+        for i in range(4):
+            self.master_device.api_session.setInt(node_base+f'/AWGS/{i}/DIO/VALID/POLARITY',2)
+            self.master_device.api_session.setInt(node_base+f'/AWGS/{i}/DIO/VALID/INDEX',0)
+            self.master_device.api_session.setInt(node_base+f'/AWGS/{i}/DIO/STROBE/SLOPE',0)
         
         
-        # with self.master_device._device.set_transaction():
-        #     # Settings in 'DIO' tab
-        #     self.master_device._device.dios[0].drive(0b0001)                        # Enable driving first byte
-        #     self.master_device._device.dios[0].output(0x00)                         # Reset DIO to clean state
-        #     self.master_device._device.dios[0].mode('awg_sequencer_commands')       # Switch to "AWG Sequencer" mode
+        with self.master_device._device.set_transaction():
+            # Settings in 'DIO' tab
+            self.master_device._device.dios[0].drive(0b0001)                        # Enable driving first byte
+            self.master_device._device.dios[0].output(0x00)                         # Reset DIO to clean state
+            self.master_device._device.dios[0].mode('awg_sequencer_commands')       # Switch to "AWG Sequencer" mode
             
-        #     # Settings in "AWG Sequencer" - "Trigger" sub-tab
-        #     self.master_device._device.awgs["*"].dio.valid.polarity('high')
-        #     self.master_device._device.awgs["*"].dio.valid.index(0)
-        #     self.master_device._device.awgs["*"].dio.strobe.slope('off')
+            # Settings in "AWG Sequencer" - "Trigger" sub-tab
+            self.master_device._device.awgs["*"].dio.valid.polarity('high')
+            self.master_device._device.awgs["*"].dio.valid.index(0)
+            self.master_device._device.awgs["*"].dio.strobe.slope('off')
         
         # pass
         return  
