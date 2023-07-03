@@ -517,8 +517,12 @@ class ProgramWaveformManager:
             programs.discard(self._program_name)
         #this currently does not clear the respective entries in the _zhinst_waveforms_tuple object. but is it really relevant?...
         # self._memory.concatenated_waveforms[self._waveform_name].clear()
-        self._memory.concatenated_waveforms_subdivided[self._waveform_name].clear()
-        self._memory.concatenated_waveforms_subdivided_info[self._waveform_name].clear()
+        #probably unnecessary and only causes errors. put in try except, lol
+        try:
+            self._memory.concatenated_waveforms_subdivided[self._waveform_name].clear()
+            self._memory.concatenated_waveforms_subdivided_info[self._waveform_name].clear()
+        except:
+            pass
         
     def request_shared(self, binary_waveform: Tuple[BinaryWaveform, ...]) -> str:
         """Register waveform if not already registered and return a unique identifier placeholder.

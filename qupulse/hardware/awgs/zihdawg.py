@@ -505,6 +505,8 @@ class HDAWGChannelGroup(AWG):
             raise HDAWGValueError('{} is already known on {}'.format(name, self.identifier))
 
         # Go to qupulse nanoseconds time base.
+        # pulse lengths of 1 and 2 times 16 samples are bad in 2.4Gs as they are inaccurate on floating point level
+        # leading to weird qupulse behavior when comparing program.duration (ExpressionScalar/float) with sample rate (TimeType)
         q_sample_rate = self.sample_rate / 10**9
 
         # Adjust program to fit criteria.
