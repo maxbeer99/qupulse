@@ -389,8 +389,14 @@ class WaveformMemory:
     
     def fill_ct_dict(self,ct_dict):
 
+        # print('\n IN SEQC FILL \n')
+        # print(ct_dict[0].as_dict())        
+
         for i,ct_key in enumerate(ct_dict.keys()):
             for (ct_idx,info_tuple) in self.ct_info_link.items():
+                
+                # print('\n IN SEQC FILL \n')
+                # print(ct_dict[0].as_dict())
                 
                 #this is not addressing the underlying problem as also only ~1000 entries in the command table can be made. 
                 #(currently one-to-one correspondence between table and waveforms, which is bad, but cannot be done otherwise?
@@ -462,6 +468,10 @@ class WaveformMemory:
             
             
         for program_name, (declaration_func,name_iter) in self.fsp_waveforms.items():
+            
+            # print('\n IN SEQC WF DECL FILL \n')
+            # print(ct_dict[0].as_dict())    
+            
             
             self.program_pos_var_start[program_name] = ct_index
             wf_decl_string, ct_index, wave_table_index, self._zhinst_waveforms_tuple = \
@@ -960,8 +970,9 @@ class HDAWGProgramManager:
         """
         assert name not in self._programs
         
-        if self._ct_dict is None:
-            self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
+        #probably need to disable this to always reinstantiate, cause also always filled.
+        # if self._ct_dict is None:
+        self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
         
         selection_index = self._get_low_unused_index()
 
@@ -1058,6 +1069,9 @@ class HDAWGProgramManager:
             else:
                 const_repr = const_val.to_seqc()
             lines.append('const {const_name} = {const_repr};'.format(const_name=const_name, const_repr=const_repr))
+        
+        # print('\n BEFORE SEQC FILL \n')
+        # print(self._ct_dict[0].as_dict())
         
         wf_lines = self._waveform_memory.waveform_declaration(self._ct_dict)
         lines.append(wf_lines)
