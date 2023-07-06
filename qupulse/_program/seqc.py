@@ -391,7 +391,9 @@ class WaveformMemory:
 
         # print('\n IN SEQC FILL \n')
         # print(ct_dict[0].as_dict())        
-
+        
+        awg_standard_rate = self._awg.sample_rate_divider
+        
         for i,ct_key in enumerate(ct_dict.keys()):
             for (ct_idx,info_tuple) in self.ct_info_link.items():
                 
@@ -404,7 +406,9 @@ class WaveformMemory:
                 #manual claims this could be faster than playWave nonetheless
                 ct_dict[ct_key].table[ct_idx].waveform.index = int(info_tuple[0][i])
                 ct_dict[ct_key].table[ct_idx].waveform.length = int(info_tuple[1])
-                ct_dict[ct_key].table[ct_idx].waveform.samplingRateDivider = int(info_tuple[2])
+                total_rate_divider = int(info_tuple[2])+awg_standard_rate
+                assert total_rate_divider <= self._awg.MAX_SAMPLE_RATE_DIVIDER
+                ct_dict[ct_key].table[ct_idx].waveform.samplingRateDivider = total_rate_divider
             
         return ct_dict
     
@@ -478,8 +482,7 @@ class WaveformMemory:
                 declaration_func(self._awg,ct_dict,ct_start_index=ct_index,wf_start_index=wave_table_index,
                                  waveforms_tuple = self._zhinst_waveforms_tuple
                                  )
-                
-                
+  
                 
             if ct_index > 1024:
                 raise RuntimeError('too many CT entries')
@@ -725,6 +728,7 @@ class HDAWGProgramEntry(ProgramEntry):
                 indentation: str,
                 trigger_wait_code: str,
                 available_registers: Iterable[UserRegister],
+                max_rate_divider: int
                 ):
         """Compile the loop representation to an internal sequencing c one using `loop_to_seqc`
 
@@ -737,6 +741,8 @@ class HDAWGProgramEntry(ProgramEntry):
         Returns:
 
         """
+        # max_rate_divider = self._aw
+        
         pos_var_name = 'pos'
         
         if self._seqc_node:
@@ -749,7 +755,8 @@ class HDAWGProgramEntry(ProgramEntry):
                                        min_repetitions_for_for_loop=min_repetitions_for_for_loop,
                                        min_repetitions_for_shared_wf=min_repetitions_for_shared_wf,
                                        waveform_to_bin=self.get_binary_waveform,
-                                       user_registers=user_registers)
+                                       user_registers=user_registers,
+                                       max_rate_divider=max_rate_divider)
 
         self._user_register_source = '\n'.join(
             '{indentation}var {user_reg_name} = getUserReg({register});'.format(indentation=indentation,
@@ -970,6 +977,8 @@ class HDAWGProgramManager:
         """
         assert name not in self._programs
         
+        max_available_rate_divider = self._awg.MAX_SAMPLE_RATE_DIVIDER - self._awg.sample_rate_divider
+        
         #probably need to disable this to always reinstantiate, cause also always filled.
         # if self._ct_dict is None:
         self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
@@ -991,6 +1000,7 @@ class HDAWGProgramManager:
         # TODO: put compilation in seperate function
         self._ct_start_idx = program_entry.compile(**compiler_settings,
                                   available_registers=available_registers,
+                                  max_rate_divider=max_available_rate_divider
                                   )
 
         self._programs[name] = program_entry
@@ -1301,24 +1311,27 @@ def loop_to_seqc(loop: Loop,
                  min_repetitions_for_for_loop: int,
                  min_repetitions_for_shared_wf: int,
                  waveform_to_bin: Callable[[Waveform], Tuple[BinaryWaveform, ...]],
-                 user_registers: UserRegisterManager) -> 'SEQCNode':
+                 user_registers: UserRegisterManager,
+                 max_rate_divider: int) -> 'SEQCNode':
     assert min_repetitions_for_for_loop <= min_repetitions_for_shared_wf
     # At which point do we switch from indexed to shared
 
     if loop.is_leaf():
-        node = WaveformPlayback(waveform_to_bin(loop.waveform))
+        node = WaveformPlayback(waveform_to_bin(loop.waveform),max_rate_divider=max_rate_divider)
 
     elif len(loop) == 1:
         node = loop_to_seqc(loop[0],
                             min_repetitions_for_for_loop=min_repetitions_for_for_loop,
                             min_repetitions_for_shared_wf=min_repetitions_for_shared_wf,
-                            waveform_to_bin=waveform_to_bin, user_registers=user_registers)
+                            waveform_to_bin=waveform_to_bin, user_registers=user_registers,
+                            max_rate_divider=max_rate_divider)
 
     else:
         node_clusters = to_node_clusters(loop, dict(min_repetitions_for_for_loop=min_repetitions_for_for_loop,
                                                     min_repetitions_for_shared_wf=min_repetitions_for_shared_wf,
                                                     waveform_to_bin=waveform_to_bin,
-                                                    user_registers=user_registers))
+                                                    user_registers=user_registers,
+                                                    max_rate_divider=max_rate_divider))
 
         seqc_nodes = []
 
@@ -1631,11 +1644,14 @@ class WaveformPlayback(SEQCNode):
 
     __slots__ = ('waveform', 'shared', 'rate')
 
-    def __init__(self, waveform: Tuple[BinaryWaveform, ...], shared: bool = False, rate: int = None):
+    def __init__(self, waveform: Tuple[BinaryWaveform, ...], shared: bool = False,
+                 rate: int = None, max_rate_divider: int = 13):
         assert isinstance(waveform, tuple)
+        if rate is not None:
+            assert rate <= max_rate_divider
         if self.ENABLE_DYNAMIC_RATE_REDUCTION and rate is None:
             for wf in waveform:
-                rate = wf.dynamic_rate(12 if rate is None else rate)
+                rate = wf.dynamic_rate(max_rate_divider if rate is None else rate)
         self.waveform = waveform
         self.shared = shared
         self.rate = rate

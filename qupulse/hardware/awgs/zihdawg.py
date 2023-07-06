@@ -200,7 +200,7 @@ class HDAWGRepresentation:
             if ch % 2 == 0:
                 output = HDAWGTriggerOutSource.OUT_1_MARK_1.value
             else:
-                output = HDAWGTriggerOutSource.OUT_1_MARK_2.value
+                output = HDAWGTriggerOutSource.OUT_2_MARK_1.value
             settings.append(['/{}/triggers/out/{}/source'.format(self.serial, ch), output])
 
         self.api_session.set(settings)
@@ -226,7 +226,7 @@ class HDAWGRepresentation:
             if ch % 2 == 0:
                 output = HDAWGTriggerOutSource.OUT_1_MARK_1.value
             else:
-                output = HDAWGTriggerOutSource.OUT_1_MARK_2.value
+                output = HDAWGTriggerOutSource.OUT_2_MARK_1.value
             marker_settings.append([f'/{self.serial}/triggers/out/{ch}/source', output])
         self.api_session.set(marker_settings)
         self.api_session.sync()
@@ -404,6 +404,8 @@ class HDAWGChannelGroup(AWG):
     MIN_WAVEFORM_LEN = 32 #With the command table and discarding playWaveIndexed,
     # it should now be relatively reliable to set 32 as the minimum instead of 192
     WAVEFORM_LEN_QUANTUM = 16
+    
+    MAX_SAMPLE_RATE_DIVIDER = 13
     
     def __init__(self,
                  identifier: str,
@@ -755,6 +757,14 @@ class HDAWGChannelGroup(AWG):
     def programs(self) -> Set[str]:
         """The set of program names that can currently be executed on the hardware AWG."""
         return set(self._program_manager.programs.keys())
+    
+    @property
+    def sample_rate_divider(self) -> int:
+        """The integer sample rate divider of the AWG channel group, [0,13],
+        sample rate = sample clock / 2**divider"""
+        node_path = '/{}/awgs/{}/time'.format(self.master_device.serial, self.awg_group_index)
+        sample_rate_num = self.master_device.api_session.getInt(node_path)
+        return sample_rate_num
 
     @property
     def sample_rate(self) -> TimeType:
