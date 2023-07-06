@@ -645,7 +645,13 @@ class HDAWGChannelGroup(AWG):
             name: The name of the program to remove.
         """
         self._program_manager.remove(name)
-        self._required_seqc_source = self._program_manager.to_seqc_program()
+        #USERREGBUG
+        # self._required_seqc_source = self._program_manager.to_seqc_program()
+        if name != self._current_program:
+            self._required_seqc_source = self._program_manager.to_seqc_program(self._current_program)
+        else:
+            self._required_seqc_source = self._program_manager.to_seqc_program()
+
 
     def clear(self) -> None:
         """Removes all programs and waveforms from the AWG.
