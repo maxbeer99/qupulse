@@ -1024,6 +1024,8 @@ class HDAWGProgramManager:
         return MappingProxyType(self._programs)
 
     def remove(self, name: str) -> None:
+        #as unsure whether it happens elsewhere: put here. may be smarter to relocate to seqc-program-generation
+        self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
         self._programs.pop(name).prepare_delete()
 
     def clear(self) -> None:
