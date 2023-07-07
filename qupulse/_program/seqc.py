@@ -927,7 +927,7 @@ class HDAWGProgramManager:
 
     def _get_compiler_settings(self, program_name: str) -> dict:
         arg_spec = inspect.getfullargspec(HDAWGProgramEntry.compile)
-        required_compiler_args = (set(arg_spec.args) | set(arg_spec.kwonlyargs)) - {'self', 'available_registers'}
+        required_compiler_args = (set(arg_spec.args) | set(arg_spec.kwonlyargs)) - {'self', 'available_registers', 'max_rate_divider'}
 
         settings = {}
         for regex, settings_dict in self._compiler_settings:
