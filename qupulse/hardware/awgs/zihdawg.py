@@ -771,6 +771,14 @@ class HDAWGChannelGroup(AWG):
         node_path = '/{}/awgs/{}/time'.format(self.master_device.serial, self.awg_group_index)
         sample_rate_num = self.master_device.api_session.getInt(node_path)
         return sample_rate_num
+    
+    @sample_rate_divider.setter
+    def sample_rate_divider(self, divider: int) -> int:
+        """The integer sample rate divider of the AWG channel group, [0,13],
+        sample rate = sample clock / 2**divider"""
+        node_path = '/{}/awgs/{}/time'.format(self.master_device.serial, self.awg_group_index)
+        self.master_device.api_session.setInt(node_path,divider)
+        return self.sample_rate_divider
 
     @property
     def sample_rate(self) -> TimeType:
