@@ -310,7 +310,10 @@ def with_select(function_object: Callable[['TaborChannelPair', Any], Any]) -> Ca
 @traced
 class TaborChannelPair(AWG):
     CONFIG_MODE_PARANOIA_LEVEL = None
-
+    
+    MIN_WAVEFORM_LEN = 192
+    WAVEFORM_LEN_QUANTUM = 16
+    
     def __init__(self, tabor_device: TaborAWGRepresentation, channels: Tuple[int, int], identifier: str):
         super().__init__(identifier)
         self._device = weakref.ref(tabor_device)

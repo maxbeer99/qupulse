@@ -458,7 +458,7 @@ class WaveformMemory:
             self.ct_info_link[ct_index] = [wft_idxs,wave_info.sample_length,wave_info.sample_rate]
 
             if ct_index > 1024:
-                raise RuntimeError('too many CT entries') #needs to be handled otherwise then (somehow)...
+                raise RuntimeError('too many CT entries. For now, restart driver, nominally clear/remove program should work, but does not atm.') #needs to be handled otherwise then (somehow)...
         
             ct_index += 1
             #TODO: this can be more efficient, i believe. correspondent to ct is fine however, since way more waveforms than ct entries available.

@@ -5,7 +5,8 @@ import numbers
 
 from qupulse.hardware.awgs.base import AWG
 from qupulse.hardware.dacs import DAC
-from qupulse._program._loop import Loop
+from qupulse._program._loop import Loop, roll_constant_waveforms
+from qupulse.utils.types import TimeType
 
 from qupulse.utils.types import ChannelID
 
@@ -92,7 +93,9 @@ class HardwareSetup:
 
     def register_program(self, name: str,
                          program: Loop,
-                         run_callback=lambda: None, update=False) -> None:
+                         run_callback=lambda: None, update=False,
+                         roll_const_wfs: bool = False,
+                         ) -> None:
         if not callable(run_callback):
             raise TypeError('The provided run_callback is not callable')
 
@@ -143,13 +146,34 @@ class HardwareSetup:
                     voltage_trafos[single_channel.channel_on_awg] = single_channel.voltage_transformation
                 elif isinstance(single_channel, MarkerChannel):
                     marker_ids[single_channel.channel_on_awg] = channel_id
-
+        
         for awg, (playback_ids, voltage_trafos, marker_ids) in awgs_to_channel_info.items():
             if awg in handled_awgs:
                 raise ValueError('AWG has two programs')
             else:
                 handled_awgs.add(awg)
-            awg.upload(name,
+        
+        #needs to happen after measurements registered
+        if roll_const_wfs == True and len(handled_awgs)!=0:
+            min_waveform_lens = np.array([awg.MIN_WAVEFORM_LEN for awg in handled_awgs])
+            waveform_len_quanta = np.array([awg.WAVEFORM_LEN_QUANTUM for awg in handled_awgs])
+            sample_rates = [TimeType(awg.sample_rate)*1e-9 for awg in handled_awgs] # the sample rates are given in S/s apparently, need to convert
+            
+            limiting_awg = np.argmax(min_waveform_lens*sample_rates) #longest minimal time
+            #assumes minimal length as multiple of quantum, but should be given otherwise stupid design
+            minimal_waveform_quanta = min_waveform_lens[limiting_awg] // waveform_len_quanta[limiting_awg]
+            waveform_quantum = waveform_len_quanta[limiting_awg]
+            sample_rate = sample_rates[limiting_awg]
+            
+            print(minimal_waveform_quanta)
+            print(waveform_quantum)
+            print(sample_rate)
+            
+            roll_constant_waveforms(program=program,minimal_waveform_quanta=minimal_waveform_quanta,waveform_quantum=waveform_quantum,sample_rate=sample_rate)
+        
+        for awg, (playback_ids, voltage_trafos, marker_ids) in awgs_to_channel_info.items():
+            if awg in handled_awgs:  
+                awg.upload(name,
                        program=program,
                        channels=tuple(playback_ids),
                        markers=tuple(marker_ids),

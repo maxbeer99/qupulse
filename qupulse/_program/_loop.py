@@ -666,7 +666,8 @@ def roll_constant_waveforms(program: Loop, minimal_waveform_quanta: int, wavefor
             roll_constant_waveforms(child, minimal_waveform_quanta, waveform_quantum, sample_rate)
     else:
         waveform_quanta = (waveform.duration * sample_rate) // waveform_quantum
-
+        
+        print(f'calculated quanta: {waveform_quanta}')
         # example
         # waveform_quanta = 15
         # minimal_waveform_quanta = 2
@@ -681,7 +682,11 @@ def roll_constant_waveforms(program: Loop, minimal_waveform_quanta: int, wavefor
             return
 
         new_waveform_quanta = smallest_factor_ge(waveform_quanta, min_factor=minimal_waveform_quanta)
+        
+        print(f'calculated quanta factored: {new_waveform_quanta}')
+        
         if new_waveform_quanta == waveform_quanta:
+            print('No suitable factor, no rolling')
             # the waveform duration in samples has no suitable factor
             # TODO: Option to insert multiple Loop objects
             return

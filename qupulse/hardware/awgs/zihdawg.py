@@ -30,7 +30,7 @@ except ImportError:
 import time
 
 from qupulse.utils.types import ChannelID, TimeType, time_from_float
-from qupulse._program._loop import Loop, make_compatible
+from qupulse._program._loop import Loop, make_compatible, roll_constant_waveforms
 from qupulse._program.seqc import HDAWGProgramManager, UserRegister, WaveformFileSystem
 from qupulse.hardware.awgs.base import AWG, ChannelNotFoundException, AWGAmplitudeOffsetHandling
 from qupulse.hardware.util import traced
@@ -496,6 +496,12 @@ class HDAWGChannelGroup(AWG):
         Returning from setting user register in seqc can take from 50ms to 60 ms. Fluctuates heavily. Not a good way to
         have deterministic behaviour "setUserReg(PROG_SEL, PROG_IDLE);".
         """
+        
+        # TODO
+        # now in hardwaresetup cause tabor also affected
+        # roll_constant_waveforms(program=program,
+        #                         minimal_waveform_quanta: int, waveform_quantum: int, sample_rate: TimeType)
+        
         if len(channels) != self.num_channels:
             raise HDAWGValueError('Channel ID not specified')
         if len(markers) != self.num_markers:
@@ -567,21 +573,35 @@ class HDAWGChannelGroup(AWG):
         
         self._wait_for_compile_and_upload_elf()
         
+        print('ELF finished')
+        
         # print(self._program_manager._waveform_memory._zhinst_waveforms_tuple)
         #TODO: this should be the most time-consuming here...
         with self._master_device._device.set_transaction():
             for i in range(self.num_channels//2):
                 self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
+        print('WFs finished')
         # print(self._current_ct_dict)
         
         self._upload_ct_dict(self._current_ct_dict)
+        
+        print('CT finished')
         
         #TODO: sometimes there seemed to be an error with upload - why?
         time.sleep(1.0)
         
         #!!! does this mean everything uploaded? check others too, or not relevant if grouped / potentially harmful?
         self._master_device._device.awgs[self.awg_group_index].ready.wait_for_state_change(1,timeout=self.timeout)
+        
+        print('state change ready')
+        
+        sequencer_ready_status = self._master_device.api_session.getInt('/{}/AWGS/{}/READY'.format(self.master_device.serial, self.awg_group_index))
+        
+        if not  sequencer_ready_status == 1:
+            print('sequencer ready status: ' + str(sequencer_ready_status))
+            raise RuntimeError('the Zurich package did not appropriately wait for state change')
+            
         
         #only after everything done set correctly.
         self._uploaded_seqc_source = self._required_seqc_source
