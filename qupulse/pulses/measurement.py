@@ -6,6 +6,8 @@ from qupulse.expressions import Expression
 from qupulse.utils.types import MeasurementWindow
 from qupulse.parameter_scope import Scope
 
+from qupulse.expressions import _parse_evaluate_numeric
+
 MeasurementDeclaration = Tuple[str, Union[Expression, str, Real], Union[Expression, str, Real]]
 
 
@@ -48,9 +50,14 @@ class MeasurementDefiner:
                 continue
 
             assert volatile.isdisjoint(begin.variables) and volatile.isdisjoint(length.variables), "volatile measurement parameters are not supported"
-
+            
+            # try:
+            #     begin_val = _parse_evaluate_numeric(begin.original_expression)
+            #     length_val = _parse_evaluate_numeric(length.original_expression)
+            # except:
             begin_val = begin.evaluate_in_scope(parameters)
             length_val = length.evaluate_in_scope(parameters)
+                
             if begin_val < 0 or length_val < 0:
                 raise ValueError('Measurement window with negative begin or length: {}, {}'.format(begin, length))
 

@@ -447,13 +447,18 @@ class ExpressionScalar(Expression):
             raise NonNumericEvaluation(self, result, scope) from err
 
     def evaluate_in_scope(self, scope: Mapping) -> Union[Number, numpy.ndarray]:
-        parsed_kwargs = self._parse_evaluate_numeric_arguments(scope)
-        result, self._expression_lambda = evaluate_lambdified(self.underlying_expression, self.variables,
-                                                              parsed_kwargs, lambdified=self._expression_lambda)
+        
+        #!!! HACK for faster float eval
         try:
-            return _parse_evaluate_numeric(result)
-        except ValueError as err:
-            raise NonNumericEvaluation(self, result, scope) from err
+            return _parse_evaluate_numeric(self.original_expression)
+        except:
+            parsed_kwargs = self._parse_evaluate_numeric_arguments(scope)
+            result, self._expression_lambda = evaluate_lambdified(self.underlying_expression, self.variables,
+                                                                  parsed_kwargs, lambdified=self._expression_lambda)
+            try:
+                return _parse_evaluate_numeric(result)
+            except ValueError as err:
+                raise NonNumericEvaluation(self, result, scope) from err
 
 
 class ExpressionVariableMissingException(Exception):
