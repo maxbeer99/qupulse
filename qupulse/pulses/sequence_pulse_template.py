@@ -133,7 +133,9 @@ class SequencePulseTemplate(PulseTemplate, ParameterConstrainer, MeasurementDefi
                                  channel_mapping: Dict[ChannelID, Optional[ChannelID]],
                                  global_transformation: Optional['Transformation'],
                                  to_single_waveform: Set[Union[str, 'PulseTemplate']],
-                                 parent_loop: Loop) -> None:
+                                 parent_loop: Loop,
+                                 to_single_wf_if_atomic_subs: bool = True, #not handled in higher calls
+                                 ) -> None:
         self.validate_scope(scope)
 
         if self.duration.evaluate_in_scope(scope) > 0:
@@ -142,6 +144,13 @@ class SequencePulseTemplate(PulseTemplate, ParameterConstrainer, MeasurementDefi
                 parent_loop.add_measurements(measurements)
 
             for subtemplate in self.subtemplates:
+                
+                #let's see if this works... (implicitly rules out utilizing sample rate divider in hdawg)
+                if to_single_wf_if_atomic_subs:
+                    all_subs_atomic = all([sub._is_atomic() for sub in self.subtemplates])
+                    if all_subs_atomic:
+                        to_single_waveform.update(self.subtemplates)
+                
                 subtemplate._create_program(scope=scope,
                                             measurement_mapping=measurement_mapping,
                                             channel_mapping=channel_mapping,
