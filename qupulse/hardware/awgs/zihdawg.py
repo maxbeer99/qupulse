@@ -582,7 +582,7 @@ class HDAWGChannelGroup(AWG):
                 self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
         print('WFs finished')
-        # print(self._current_ct_dict)
+        print(self._current_ct_dict)
         
         self._upload_ct_dict(self._current_ct_dict)
         
@@ -765,7 +765,9 @@ class HDAWGChannelGroup(AWG):
         # this was a workaround for problems in the past and I totally forgot why it was here
         # for ch_pair in self.master.channel_tuples:
         #    ch_pair._wait_for_compile_and_upload()
-        self.enable(True)
+        
+        # !!!as a workaround: do not enable upon arm anzmore...
+        # self.enable(True)
 
     def run_current_program(self) -> None:
         """Run armed program."""

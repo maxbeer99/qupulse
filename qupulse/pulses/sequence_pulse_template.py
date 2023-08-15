@@ -134,7 +134,7 @@ class SequencePulseTemplate(PulseTemplate, ParameterConstrainer, MeasurementDefi
                                  global_transformation: Optional['Transformation'],
                                  to_single_waveform: Set[Union[str, 'PulseTemplate']],
                                  parent_loop: Loop,
-                                 to_single_wf_if_atomic_subs: bool = True, #not handled in higher calls
+                                 to_single_wf_if_atomic_subs: bool = False, #not handled in higher calls
                                  ) -> None:
         self.validate_scope(scope)
 

@@ -397,6 +397,15 @@ class WaveformMemory:
         for i,ct_key in enumerate(ct_dict.keys()):
             for (ct_idx,info_tuple) in self.ct_info_link.items():
                 
+                #ct_dict[ct_key].table[ct_idx].waveform.index = int(info_tuple[0][i])
+                #this shouldn't be explicitly necessary, but do nonetheless...
+                ct_dict[ct_key].table[ct_idx].amplitude0.value = 1.0
+                ct_dict[ct_key].table[ct_idx].amplitude0.increment = False
+                ct_dict[ct_key].table[ct_idx].amplitude1.register = 0
+                ct_dict[ct_key].table[ct_idx].amplitude1.value = 1.0
+                ct_dict[ct_key].table[ct_idx].amplitude1.increment = False
+                ct_dict[ct_key].table[ct_idx].amplitude1.register = 0
+
                 # print('\n IN SEQC FILL \n')
                 # print(ct_dict[0].as_dict())
                 
