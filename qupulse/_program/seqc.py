@@ -401,7 +401,7 @@ class WaveformMemory:
                 #this shouldn't be explicitly necessary, but do nonetheless...
                 ct_dict[ct_key].table[ct_idx].amplitude0.value = 1.0
                 ct_dict[ct_key].table[ct_idx].amplitude0.increment = False
-                ct_dict[ct_key].table[ct_idx].amplitude1.register = 0
+                ct_dict[ct_key].table[ct_idx].amplitude0.register = 0
                 ct_dict[ct_key].table[ct_idx].amplitude1.value = 1.0
                 ct_dict[ct_key].table[ct_idx].amplitude1.increment = False
                 ct_dict[ct_key].table[ct_idx].amplitude1.register = 0
