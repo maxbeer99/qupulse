@@ -39,6 +39,10 @@ from zhinst.toolkit import Session
 
 logger = logging.getLogger('qupulse.hdawg')
 
+#export for zurich tests
+import pickle
+DEBUG_SAVE = r'F:\\ZIHDAWG_DEBUG\\'
+from datetime import datetime
 
 def valid_channel(function_object):
     """Check if channel is a valid AWG channels. Expects channel to be 2nd argument after self."""
@@ -407,6 +411,8 @@ class HDAWGChannelGroup(AWG):
     
     MAX_SAMPLE_RATE_DIVIDER = 13
     
+    CT_IDLE_STR = '{"header": {"version": "1.2.1"}, "table": []}'
+    
     def __init__(self,
                  identifier: str,
                  timeout: float) -> None:
@@ -418,7 +424,7 @@ class HDAWGChannelGroup(AWG):
         self._elf_manager = None
         self._required_seqc_source = self._program_manager.to_seqc_program()
         self._uploaded_seqc_source = None
-        self._current_ct_dict = {i:'' for i in range(self.num_channels//2)}
+        self._current_ct_dict = {i:self.CT_IDLE_STR for i in range(self.num_channels//2)}
         self._current_program = None  # Currently armed program.
         self._upload_generator = ()
 
@@ -547,13 +553,15 @@ class HDAWGChannelGroup(AWG):
                                           append_seqc_snippet=self.append_seqc_snippet,
                                           )
         
-        self._required_seqc_source = self._program_manager.to_seqc_program()
+        #USERREGBUG: only upload single program always?
+        self._required_seqc_source = self._program_manager.to_seqc_program(name)
         
         #TODO: may be omitted if placeholder wfs used, perhaps faster?
         self._program_manager.waveform_memory.sync_to_file_system(self.master_device.waveform_file_system)
         
         #needs to be uploaded only after everything else (elf-upload) done
         self._current_ct_dict = self._program_manager.finalize_ct_dict()
+
         
         # start compiling the source (non-blocking)
         self._start_compile_and_upload()
@@ -575,21 +583,35 @@ class HDAWGChannelGroup(AWG):
         
         print('ELF finished')
         
+        #extra sleep here...
+        time.sleep(0.5)
         # print(self._program_manager._waveform_memory._zhinst_waveforms_tuple)
         #TODO: this should be the most time-consuming here...
-        with self._master_device._device.set_transaction():
-            for i in range(self.num_channels//2):
-                self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
+        # with self._master_device._device.set_transaction(): #disable set_transaction for now.
+        for i in range(self.num_channels//2):
+            self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
+        
+        #try to do it 2 times...
+        time.sleep(0.5)
+        for i in range(self.num_channels//2):
+            self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
+        
         
         print('WFs finished')
         print(self._current_ct_dict)
         
-        self._upload_ct_dict(self._current_ct_dict)
+        # self._upload_ct_dict(self._current_ct_dict)
+        
+        #test other way of uploading this
+        # with self._master_device._device.set_transaction(): #disable set_transaction for now.
+        for i in range(self.num_channels//2):
+            self._master_device._device.awgs[self.awg_group_index+i].commandtable.upload_to_device(self._current_ct_dict[i])
+        
         
         print('CT finished')
         
         #TODO: sometimes there seemed to be an error with upload - why?
-        time.sleep(1.0)
+        time.sleep(0.5)
         
         #!!! does this mean everything uploaded? check others too, or not relevant if grouped / potentially harmful?
         self._master_device._device.awgs[self.awg_group_index].ready.wait_for_state_change(1,timeout=self.timeout)
@@ -672,7 +694,6 @@ class HDAWGChannelGroup(AWG):
         else:
             self._required_seqc_source = self._program_manager.to_seqc_program()
 
-
     def clear(self) -> None:
         """Removes all programs and waveforms from the AWG.
 
@@ -681,7 +702,7 @@ class HDAWGChannelGroup(AWG):
         self._program_manager.clear()
         self._current_program = None
         self._required_seqc_source = self._program_manager.to_seqc_program()
-        self._current_ct_dict = {i:'' for i in range(self.num_channels//2)}
+        self._current_ct_dict = {i:self.CT_IDLE_STR for i in range(self.num_channels//2)}
         self._start_compile_and_upload()
         self.arm(None)
     
@@ -730,12 +751,28 @@ class HDAWGChannelGroup(AWG):
             self._required_seqc_source = self._program_manager.to_seqc_program(name)
         if self._required_seqc_source != self._uploaded_seqc_source:
             self._start_compile_and_upload()
-
+        
         if self._required_seqc_source != self._uploaded_seqc_source:
         #!!! does this break if it's already equal? should not...
         #TODO: clear_program does not work yet somehow...
             self._wait_for_compile_and_upload()
-
+        
+        
+        #DEBUG
+        #it doesn't save waveforms objects correctly... apparently.
+        debug_waveforms = [None,]*4
+        for i,waveforms in enumerate(self._program_manager._waveform_memory._zhinst_waveforms_tuple):
+            debug_waveforms[i] = {j:(w[0].tolist(),w[1].tolist(),w[2].tolist()) for j,w in waveforms.items()}
+        p_dict = {}
+        p_dict['seqc_source'] = self._required_seqc_source
+        p_dict['ct_dict'] = self._current_ct_dict
+        # p_dict['waveforms_tuple'] = self._program_manager._waveform_memory._zhinst_waveforms_tuple
+        p_dict['waveforms_tuple'] = debug_waveforms
+        with open(DEBUG_SAVE+str(datetime.now()).replace(':','_').replace('.','_')+str(self.master_device.serial)+'.pickle', 'wb') as handle:
+            pickle.dump(p_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # DEBUG_SAVE
+        
+        
         self.user_register(self._program_manager.Constants.TRIGGER_REGISTER, 0)
 
         if name is None:
