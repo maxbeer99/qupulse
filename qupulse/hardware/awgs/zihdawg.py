@@ -10,7 +10,7 @@ import pathlib
 import hashlib
 import argparse
 import re
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 
 try:
     # zhinst fires a DeprecationWarning from its own code in some versions...
@@ -443,7 +443,8 @@ class HDAWGChannelGroup(AWG):
         self._awg_module.set('awgModule/device', self.master_device.serial)
         self._awg_module.set('awgModule/index', self.awg_group_index)
         self._awg_module.execute()
-        self._elf_manager = ELFManager(self.awg_module)
+        # self._elf_manager = ELFManager(self.awg_module)
+        self._elf_manager = ELFManager.DEFAULT_CLS(self._awg_module)
         self._upload_generator = ()
 
     @property
@@ -569,6 +570,7 @@ class HDAWGChannelGroup(AWG):
     def _start_compile_and_upload(self):
         self._uploaded_seqc_source = None
         self._upload_generator = self._elf_manager.compile_and_upload(self._required_seqc_source)
+        logger.debug(f"_start_compile_and_upload: %r", next(self._upload_generator, "Finished"))
 
     def _wait_for_compile_and_upload_elf(self):
         for state in self._upload_generator:
@@ -757,6 +759,8 @@ class HDAWGChannelGroup(AWG):
         #TODO: clear_program does not work yet somehow...
             self._wait_for_compile_and_upload()
         
+        assert self._required_seqc_source == self._uploaded_seqc_source, "_wait_for_compile_and_upload did not work " \
+                                                                 "as expected."
         
         #DEBUG
         #it doesn't save waveforms objects correctly... apparently.
@@ -803,7 +807,7 @@ class HDAWGChannelGroup(AWG):
         # for ch_pair in self.master.channel_tuples:
         #    ch_pair._wait_for_compile_and_upload()
         
-        # !!!as a workaround: do not enable upon arm anzmore...
+        # !!!as a workaround: do not enable upon arm anymore...
         # self.enable(True)
 
     def run_current_program(self) -> None:
@@ -1050,7 +1054,8 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
         return tuple(map(self.master_device.offset, self._channels()))
     
 
-class ELFManager:
+class ELFManager(ABC):
+    DEFAULT_CLS = None
     class AWGModule:
         def __init__(self, awg_module: zhinst_core.AwgModule):
             """Provide an easily mockable interface to the zhinst AwgModule object"""
@@ -1085,6 +1090,14 @@ class ELFManager:
         @compiler_source_file.setter
         def compiler_source_file(self, source_file: str):
             self._module.set('compiler/sourcefile', source_file)
+
+        @property
+        def compiler_source_string(self) -> str:
+            return self._module.getString('compiler/sourcestring')
+
+        @compiler_source_string.setter
+        def compiler_source_string(self, source_string: str):
+            self._module.set('compiler/sourcestring', source_string)
 
         @property
         def compiler_upload(self) -> bool:
@@ -1162,6 +1175,70 @@ class ELFManager:
         # use utf-16 because str is UTF16 on most relevant machines (Windows)
         return hashlib.sha512(bytes(source_string, 'utf-16')).hexdigest()
 
+    @abstractmethod
+    def compile_and_upload(self, source_string: str) -> Generator[str, str, None]:
+        """The function returns a generator that yields the current state of the progress. The generator is empty iff
+        the upload is complete. An exception is raised if there is an error.
+        To abort send 'abort' to the generator. (not implemented :P)
+        Example:
+            >>> my_source = 'playWave("my_wave");'
+            >>> for state in elf_manager.compile_and_upload(my_source):
+            ...     print('Current state:', state)
+            ...     time.sleep(1)
+        Args:
+            source_string: Source code to compile
+        Returns:
+            Generator object that needs to be consumed
+        """
+
+
+class SimpleELFManager(ELFManager):
+    def __init__(self, awg_module: zhinst_core.AwgModule):
+        """This implementation does not attempt to do something clever like caching."""
+        super().__init__(awg_module)
+
+    def compile_and_upload(self, source_string: str) -> Generator[str, str, None]:
+        self.awg_module.compiler_upload = True
+        self.awg_module.compiler_source_string = source_string
+
+        while True:
+            status, msg = self.awg_module.compiler_status
+            if status == - 1:
+                yield 'compiling'
+            elif status == 0:
+                break
+            elif status == 1:
+                raise HDAWGCompilationException(msg)
+            elif status == 2:
+                logger.warning("Compiler warings: %s", msg)
+                break
+            else:
+                raise RuntimeError("Unexpected status", status, msg)
+
+        while True:
+            status_int, progress = self.awg_module.elf_status
+            if progress == 1.0:
+                break
+            elif status_int == 1:
+                HDAWGUploadException(self.awg_module.compiler_status)
+            else:
+                yield 'uploading @ %d%%' % (100*progress)
+
+
+ELFManager.DEFAULT_CLS = SimpleELFManager
+
+
+class CachingELFManager(ELFManager):
+    def __init__(self, awg_module: zhinst_core.AwgModule):
+        """FAILS TO UPLOAD THE CORRECT ELF FOR SOME REASON"""
+        super().__init__(awg_module)
+
+        # automatically upload after successful compilation
+        self.awg_module.compiler_upload = True
+
+        self._compile_job = None  # type: Optional[Union[str, Tuple[str, int, str]]]
+        self._upload_job = None  # type: Optional[Union[Tuple[str, float], Tuple[str, int]]]
+
     def _update_compile_job_status(self):
         """Store current compile status in self._compile_job."""
         compiler_start = self.awg_module.compiler_start
@@ -1170,8 +1247,7 @@ class ELFManager:
 
         elif isinstance(self._compile_job, str):
             if compiler_start:
-                # compilation is running
-                pass
+                logger.debug("Compiler is running.")
 
             else:
                 compiler_status, status_string = self.awg_module.compiler_status
