@@ -586,17 +586,18 @@ class HDAWGChannelGroup(AWG):
         print('ELF finished')
         
         #extra sleep here...
-        time.sleep(0.5)
+        time.sleep(0.1)
         # print(self._program_manager._waveform_memory._zhinst_waveforms_tuple)
         #TODO: this should be the most time-consuming here...
         # with self._master_device._device.set_transaction(): #disable set_transaction for now.
         for i in range(self.num_channels//2):
             self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
-        #try to do it 2 times...
-        time.sleep(0.5)
-        for i in range(self.num_channels//2):
-            self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
+        time.sleep(0.1)
+
+        # #try to do it 2 times...
+        # for i in range(self.num_channels//2):
+        #     self._master_device._device.awgs[self.awg_group_index+i].write_to_waveform_memory(self._program_manager._waveform_memory._zhinst_waveforms_tuple[i])
         
         
         print('WFs finished')
@@ -613,7 +614,7 @@ class HDAWGChannelGroup(AWG):
         print('CT finished')
         
         #TODO: sometimes there seemed to be an error with upload - why?
-        time.sleep(0.5)
+        time.sleep(0.1)
         
         #!!! does this mean everything uploaded? check others too, or not relevant if grouped / potentially harmful?
         self._master_device._device.awgs[self.awg_group_index].ready.wait_for_state_change(1,timeout=self.timeout)
