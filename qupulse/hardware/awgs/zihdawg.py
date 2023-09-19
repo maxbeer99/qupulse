@@ -41,7 +41,7 @@ logger = logging.getLogger('qupulse.hdawg')
 
 #export for zurich tests
 import pickle
-DEBUG_SAVE = r'F:\\ZIHDAWG_DEBUG\\'
+DEBUG_SAVE = None # r'F:\\ZIHDAWG_DEBUG\\'
 from datetime import datetime
 
 def valid_channel(function_object):
@@ -773,8 +773,9 @@ class HDAWGChannelGroup(AWG):
         p_dict['ct_dict'] = self._current_ct_dict
         # p_dict['waveforms_tuple'] = self._program_manager._waveform_memory._zhinst_waveforms_tuple
         p_dict['waveforms_tuple'] = debug_waveforms
-        with open(DEBUG_SAVE+str(datetime.now()).replace(':','_').replace('.','_')+str(self.master_device.serial)+'.pickle', 'wb') as handle:
-            pickle.dump(p_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        if DEBUG_SAVE is not None:
+            with open(DEBUG_SAVE+str(datetime.now()).replace(':','_').replace('.','_')+str(self.master_device.serial)+'.pickle', 'wb') as handle:
+                pickle.dump(p_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
         # DEBUG_SAVE
         
         
