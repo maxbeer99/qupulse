@@ -601,7 +601,7 @@ class HDAWGChannelGroup(AWG):
         
         
         print('WFs finished')
-        print(self._current_ct_dict)
+        # print(self._current_ct_dict)
         
         # self._upload_ct_dict(self._current_ct_dict)
         
