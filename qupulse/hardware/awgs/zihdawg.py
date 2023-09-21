@@ -41,7 +41,7 @@ logger = logging.getLogger('qupulse.hdawg')
 
 #export for zurich tests
 import pickle
-DEBUG_SAVE = None # r'F:\\ZIHDAWG_DEBUG\\'
+DEBUG_SAVE = r'F:\\ZIHDAWG_DEBUG\\'
 from datetime import datetime
 
 def valid_channel(function_object):
@@ -405,7 +405,9 @@ class HDAWGModulationMode(Enum):
 @traced
 class HDAWGChannelGroup(AWG):
     
-    MIN_WAVEFORM_LEN = 32 #With the command table and discarding playWaveIndexed,
+    # MIN_WAVEFORM_LEN = 32 #With the command table and discarding playWaveIndexed,
+    MIN_WAVEFORM_LEN = 64 #test double the size, as errors in repeat occured
+
     # it should now be relatively reliable to set 32 as the minimum instead of 192
     WAVEFORM_LEN_QUANTUM = 16
     

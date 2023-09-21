@@ -622,7 +622,8 @@ def make_compatible(program: Loop, minimal_waveform_length: int, waveform_quantu
                          'is not a multiple of quantum {}'.format(program.duration * sample_rate, waveform_quantum))
 
     elif comp_level == _CompatibilityLevel.action_required:
-        raise RuntimeError(f'{sample_rate}')
+        raise RuntimeError(f'{sample_rate} - this error is only raised to prevent performance-degrading pulse constructs.\n'+\
+                           'Comment out if you want to proceed')
         warnings.warn("qupulse will now concatenate waveforms to make the pulse/program compatible with the chosen AWG."
                       " This might take some time. If you need this pulse more often it makes sense to write it in a "
                       "way which is more AWG friendly.", MakeCompatibleWarning)
@@ -667,7 +668,7 @@ def roll_constant_waveforms(program: Loop, minimal_waveform_quanta: int, wavefor
     else:
         waveform_quanta = (waveform.duration * sample_rate) // waveform_quantum
         
-        print(f'calculated quanta: {waveform_quanta}')
+        # print(f'calculated quanta: {waveform_quanta}')
         # example
         # waveform_quanta = 15
         # minimal_waveform_quanta = 2
@@ -683,7 +684,7 @@ def roll_constant_waveforms(program: Loop, minimal_waveform_quanta: int, wavefor
 
         new_waveform_quanta = smallest_factor_ge(waveform_quanta, min_factor=minimal_waveform_quanta)
         
-        print(f'calculated quanta factored: {new_waveform_quanta}')
+        # print(f'calculated quanta factored: {new_waveform_quanta}')
         
         if new_waveform_quanta == waveform_quanta:
             print('No suitable factor, no rolling')
