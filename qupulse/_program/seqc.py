@@ -993,7 +993,7 @@ class HDAWGProgramManager:
         
         #probably need to disable this to always reinstantiate, cause also always filled.
         # if self._ct_dict is None:
-        self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
+        self._ct_dict = {i:CommandTable(s,active_validation=False) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
         
         selection_index = self._get_low_unused_index()
 
@@ -1047,7 +1047,7 @@ class HDAWGProgramManager:
 
     def remove(self, name: str) -> None:
         #as unsure whether it happens elsewhere: put here. may be smarter to relocate to seqc-program-generation
-        self._ct_dict = {i:CommandTable(s) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
+        self._ct_dict = {i:CommandTable(s,active_validation=False) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
         self._programs.pop(name).prepare_delete()
 
     def clear(self) -> None:
@@ -1136,7 +1136,7 @@ class HDAWGProgramManager:
         ct_t = self._ct_dict
         ct_t = self._waveform_memory.fill_ct_dict(ct_t)
 
-        return {i:json.dumps(ct.as_dict()) for i,ct in enumerate(ct_t.values())}
+        return {i:json.dumps(ct.as_dict(),) for i,ct in enumerate(ct_t.values())}
         
 
 def find_sharable_waveforms(node_cluster: Sequence['SEQCNode']) -> Optional[Sequence[bool]]:
