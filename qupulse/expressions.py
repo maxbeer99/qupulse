@@ -178,8 +178,14 @@ class ExpressionVector(Expression):
     """
     sympify_vector = numpy.vectorize(sympify)
 
-    def __init__(self, expression_vector: Sequence):
+    def __init__(self, expression_vector: Sequence,
+                 assert_1d_numeric: bool = False, #assert numeric 1d content of vector to circumvent sympy?
+                 ):
         super().__init__()
+
+        if assert_1d_numeric:
+            expression_items = tuple(expression_vector) #tuple casting may not even be necessary?
+            expression_shape = len(expression_vector)
 
         if isinstance(expression_vector, sympy.NDimArray):
             expression_shape = expression_vector.shape

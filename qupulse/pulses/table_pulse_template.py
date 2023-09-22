@@ -24,7 +24,7 @@ from qupulse.pulses.pulse_template import AtomicPulseTemplate, MeasurementDeclar
 from qupulse.pulses.interpolation import InterpolationStrategy, LinearInterpolationStrategy, \
     HoldInterpolationStrategy, JumpInterpolationStrategy
 from qupulse._program.waveforms import TableWaveform, TableWaveformEntry
-from qupulse.expressions import ExpressionScalar, Expression
+from qupulse.expressions import ExpressionScalar, ExpressionVector, Expression
 from qupulse.pulses.multi_channel_pulse_template import MultiChannelWaveform
 
 __all__ = ["TablePulseTemplate", "concatenate"]
@@ -46,10 +46,22 @@ class TableEntry(NamedTuple('TableEntry', [('t', ExpressionScalar),
             interp = TablePulseTemplate.interpolation_strategies[interp]
         if interp is not None and not isinstance(interp, InterpolationStrategy):
             raise KeyError(interp, 'is not a valid interpolation strategy')
-
+        
+        # if isinstance(v,(tuple,list,np.ndarray)):
+        #     if isinstance(np.asarray(v),(int,float)):
+        #         if len(v)>1:
+        #             return super().__new__(cls, ExpressionScalar.make(t),
+        #                                         ExpressionVector.make(v,assert_1d_numeric=True),
+        #                                         interp,
+        #                                         )
+        #         return super().__new__(cls, ExpressionScalar.make(t),
+        #                                     ExpressionScalar.make(v[0]),
+        #                                     interp,
+        #                                     )
+        # else:
         return super().__new__(cls, ExpressionScalar.make(t),
-                                    Expression.make(v),
-                                    interp)
+                                        Expression.make(v),
+                                        interp)
 
     def instantiate(self, parameters: Dict[str, numbers.Real]) -> TableWaveformEntry:
         return TableWaveformEntry(self.t.evaluate_with_exact_rationals(parameters),
