@@ -146,7 +146,9 @@ class Expression(AnonymousSerializable, metaclass=_ExpressionMeta):
     @classmethod
     def make(cls: Type[_ExpressionType],
              expression_or_dict,
-             numpy_evaluation=None) -> Union['ExpressionScalar', 'ExpressionVector', _ExpressionType]:
+             numpy_evaluation=None,
+             *args,**kwargs,
+             ) -> Union['ExpressionScalar', 'ExpressionVector', _ExpressionType]:
         """Backward compatible expression generation"""
         if numpy_evaluation is not None:
             warnings.warn('numpy_evaluation keyword argument is deprecated and ignored.')
@@ -160,9 +162,9 @@ class Expression(AnonymousSerializable, metaclass=_ExpressionMeta):
 
         if cls is Expression:
             if isinstance(expression, (list, tuple, numpy.ndarray, sympy.NDimArray, array.array)):
-                return ExpressionVector(expression)
+                return ExpressionVector(expression,*args,**kwargs)
             else:
-                return ExpressionScalar(expression)
+                return ExpressionScalar(expression,*args,**kwargs)
         else:
             return cls(expression)
 
@@ -182,11 +184,17 @@ class ExpressionVector(Expression):
                  assert_1d_numeric: bool = False, #assert numeric 1d content of vector to circumvent sympy?
                  ):
         super().__init__()
-
+        
+        self._assert_1d_numeric = assert_1d_numeric
         if assert_1d_numeric:
-            expression_items = tuple(expression_vector) #tuple casting may not even be necessary?
-            expression_shape = len(expression_vector)
-
+            # self._np_arr = np.asarray
+            self._expression_items = numpy.asarray(expression_vector) #tuple casting may not even be necessary?
+            self._expression_shape = (len(expression_vector),)
+            
+            self._variables = tuple()
+            self._lambdified_items = [None] * len(self._expression_items)
+            return
+        
         if isinstance(expression_vector, sympy.NDimArray):
             expression_shape = expression_vector.shape
             expression_items = tuple(_flat_iter(expression_vector))
@@ -208,6 +216,10 @@ class ExpressionVector(Expression):
         return self._variables
 
     def evaluate_in_scope(self, scope: Mapping) -> numpy.ndarray:
+        
+        if self._assert_1d_numeric:
+            return self._expression_items
+        
         parsed_kwargs = self._parse_evaluate_numeric_arguments(scope)
         flat_result = []
         for idx, expr in enumerate(self._expression_items):
@@ -221,6 +233,10 @@ class ExpressionVector(Expression):
             raise NonNumericEvaluation(self, result, scope) from err
 
     def get_serialization_data(self) -> Sequence[str]:
+        
+        if self._assert_1d_numeric:
+            return self._expression_items
+        
         serialized_items = list(map(get_most_simple_representation, self._expression_items))
         if len(self._expression_shape) == 0:
             return serialized_items[0]

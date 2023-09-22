@@ -47,14 +47,17 @@ class TableEntry(NamedTuple('TableEntry', [('t', ExpressionScalar),
         if interp is not None and not isinstance(interp, InterpolationStrategy):
             raise KeyError(interp, 'is not a valid interpolation strategy')
         
-        if isinstance(v,(tuple,list,np.ndarray)):
-            if isinstance(np.asarray(v),(int,float)):
-                if len(v)>1:
-                    return super().__new__(cls, ExpressionScalar.make(t),
-                                                ExpressionVector.make(v,assert_1d_numeric=True),
-                                                interp,
-                                                )
+        # print(type(v))
+        # print(np.asarray(v).dtype)
+        # print(isinstance(np.asarray(v).dtype,(int,np.dtypes.Float64DType,float,np.float32)))
+        if isinstance(v,(tuple,list,np.ndarray)) and isinstance(np.asarray(v).dtype,(int,np.dtypes.Float64DType,float,np.float32)):
+            if len(v)>1:
+                # print('HACK')
                 return super().__new__(cls, ExpressionScalar.make(t),
+                                            ExpressionVector(v,assert_1d_numeric=True),
+                                            interp,
+                                            )
+            return super().__new__(cls, ExpressionScalar.make(t),
                                             ExpressionScalar.make(v[0]),
                                             interp,
                                             )
