@@ -292,6 +292,7 @@ class ExpressionScalar(Expression):
         """
         super().__init__()
 
+        self._sympified_expression = None
         if isinstance(ex, sympy.Expr):
             self._original_expression = None
             self._sympified_expression = ex
@@ -304,12 +305,12 @@ class ExpressionScalar(Expression):
             if isinstance(ex, numpy.float64):
                 ex = float(ex)
             self._original_expression = ex
-            self._sympified_expression = sympify(ex)
+            # self._sympified_expression = sympify(ex) #sympify on demand cached_property
             self._variables = ()
         else:
             self._original_expression = ex
-            self._sympified_expression = sympify(ex)
-            self._variables = get_variables(self._sympified_expression)
+            # self._sympified_expression = sympify(ex) #sympify on demand cached_property
+            self._variables = get_variables(self.sympified_expression)
 
         self._exact_rational_lambdified = None
 
@@ -321,14 +322,14 @@ class ExpressionScalar(Expression):
 
     @property
     def underlying_expression(self) -> sympy.Expr:
-        return self._sympified_expression
+        return self.sympified_expression
 
     def __str__(self) -> str:
-        return str(self._sympified_expression)
+        return str(self.sympified_expression)
 
     def __repr__(self) -> str:
         if self._original_expression is None:
-            return f"ExpressionScalar('{self._sympified_expression!r}')"
+            return f"ExpressionScalar('{self.sympified_expression!r}')"
         else:
             return f"ExpressionScalar({self._original_expression!r})"
 
@@ -343,84 +344,87 @@ class ExpressionScalar(Expression):
 
     @classmethod
     def _sympify(cls, other: Union['ExpressionScalar', Number, sympy.Expr]) -> sympy.Expr:
-        return other._sympified_expression if isinstance(other, cls) else sympify(other)
+        return other.sympified_expression if isinstance(other, cls) else sympify(other)
 
     @classmethod
     def _extract_sympified(cls, other: Union['ExpressionScalar', Number, sympy.Expr]) \
                             -> Union['ExpressionScalar', Number, sympy.Expr]:
-        return getattr(other, '_sympified_expression', other)
+        return getattr(other, 'sympified_expression', other)
 
     def __lt__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> Union[bool, None]:
-        result = self._sympified_expression < self._extract_sympified(other)
+        result = self.sympified_expression < self._extract_sympified(other)
         return None if isinstance(result, sympy.Rel) else bool(result)
 
     def __gt__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> Union[bool, None]:
-        result = self._sympified_expression > self._extract_sympified(other)
+        result = self.sympified_expression > self._extract_sympified(other)
         return None if isinstance(result, sympy.Rel) else bool(result)
 
     def __ge__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> Union[bool, None]:
-        result = self._sympified_expression >= self._extract_sympified(other)
+        result = self.sympified_expression >= self._extract_sympified(other)
         return None if isinstance(result, sympy.Rel) else bool(result)
 
     def __le__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> Union[bool, None]:
-        result = self._sympified_expression <= self._extract_sympified(other)
+        result = self.sympified_expression <= self._extract_sympified(other)
         return None if isinstance(result, sympy.Rel) else bool(result)
 
     def __eq__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> bool:
         """Enable comparisons with Numbers"""
         # sympy's __eq__ checks for structural equality to be consistent regarding __hash__ so we do that too
         # see https://github.com/sympy/sympy/issues/18054#issuecomment-566198899
-        return self._sympified_expression == self._sympify(other)
+        return self.sympified_expression == self._sympify(other)
 
     def __hash__(self) -> int:
-        return hash(self._sympified_expression)
+        return hash(self.sympified_expression)
 
     def __add__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__add__(self._extract_sympified(other)))
+        return self.make(self.sympified_expression.__add__(self._extract_sympified(other)))
 
     def __radd__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympify(other).__radd__(self._sympified_expression))
+        return self.make(self._sympify(other).__radd__(self.sympified_expression))
 
     def __sub__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__sub__(self._extract_sympified(other)))
+        return self.make(self.sympified_expression.__sub__(self._extract_sympified(other)))
 
     def __rsub__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__rsub__(self._extract_sympified(other)))
+        return self.make(self.sympified_expression.__rsub__(self._extract_sympified(other)))
 
     def __mul__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__mul__(self._extract_sympified(other)))
+        return self.make(self.sympified_expression.__mul__(self._extract_sympified(other)))
 
     def __rmul__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__rmul__(self._extract_sympified(other)))
+        return self.make(self.sympified_expression.__rmul__(self._extract_sympified(other)))
 
     def __truediv__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__truediv__(self._extract_sympified(other)))
+        return self.make(self.sympified_expression.__truediv__(self._extract_sympified(other)))
 
     def __rtruediv__(self, other: Union['ExpressionScalar', Number, sympy.Expr]) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__rtruediv__(self._extract_sympified(other)))
+        return self.make(self.sympified_expression.__rtruediv__(self._extract_sympified(other)))
 
     def __neg__(self) -> 'ExpressionScalar':
-        return self.make(self._sympified_expression.__neg__())
+        return self.make(self.sympified_expression.__neg__())
 
     def __pos__(self):
-        return self.make(self._sympified_expression.__pos__())
+        return self.make(self.sympified_expression.__pos__())
 
     def _sympy_(self):
-        return self._sympified_expression
+        return self.sympified_expression
 
     @property
     def original_expression(self) -> Union[str, Number]:
         if self._original_expression is None:
-            return str(self._sympified_expression)
+            return str(self.sympified_expression)
         else:
             return self._original_expression
 
-    @property
+    @functools.cached_property #make this cached property
     def sympified_expression(self) -> sympy.Expr:
-        return self._sympified_expression
+        if self._sympified_expression is not None:
+            return self._sympified_expression
+        else:
+            return sympify(self._original_expression)
 
     def get_serialization_data(self) -> Union[str, float, int]:
-        serialized = get_most_simple_representation(self._sympified_expression)
+        serialized = get_most_simple_representation(self.sympified_expression)
         if isinstance(serialized, str):
             return self.original_expression
         else:
@@ -433,7 +437,7 @@ class ExpressionScalar(Expression):
         self.__init__(state)
 
     def is_nan(self) -> bool:
-        return sympy.sympify('nan') == self._sympified_expression
+        return sympy.sympify('nan') == self.sympified_expression
 
     def evaluate_with_exact_rationals(self, scope: Mapping) -> Union[Number, numpy.ndarray]:
         parsed_kwargs = self._parse_evaluate_numeric_arguments(scope)
