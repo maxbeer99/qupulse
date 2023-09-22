@@ -424,6 +424,9 @@ class ExpressionScalar(Expression):
             return sympify(self._original_expression)
 
     def get_serialization_data(self) -> Union[str, float, int]:
+        #skip most simple rep for int/float
+        if isinstance(self.original_expression, (int, float)):
+            return self.original_expression
         serialized = get_most_simple_representation(self.sympified_expression)
         if isinstance(serialized, str):
             return self.original_expression
