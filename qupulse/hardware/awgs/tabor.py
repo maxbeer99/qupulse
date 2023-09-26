@@ -19,6 +19,11 @@ from qupulse._program.tabor import TaborSegment, TaborException, TaborProgram, P
 
 import time
 
+#export for tabor tests
+import pickle
+DEBUG_SAVE = r'F:\\TABOR_DEBUG\\'
+from datetime import datetime
+
 __all__ = ['TaborAWGRepresentation', 'TaborChannelPair']
 
 @traced
@@ -538,7 +543,14 @@ class TaborChannelPair(AWG):
 
         waveform_to_segment, to_amend, to_insert = self._find_place_for_segments_in_memory(segments,
                                                                                            segment_lengths)
-
+        
+        #DEBUG SAVE:
+        # if DEBUG_SAVE is not None:
+        if DEBUG_SAVE is not None:
+            with open(DEBUG_SAVE+str(datetime.now()).replace(':','_').replace('.','_')+'TABOR'+'.pickle', 'wb') as handle:
+                pickle.dump((segments,segment_lengths,waveform_to_segment, to_amend, to_insert), handle, protocol=pickle.HIGHEST_PROTOCOL)
+            
+        
         self._segment_references[waveform_to_segment[waveform_to_segment >= 0]] += 1
 
         for wf_index in np.flatnonzero(to_insert > 0):
