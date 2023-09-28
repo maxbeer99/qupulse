@@ -1,3 +1,4 @@
+import dataclasses
 import sys
 from typing import NamedTuple, Optional, List, Generator, Tuple, Sequence, Mapping, Union, Dict, FrozenSet, cast,\
     Hashable
@@ -429,7 +430,7 @@ class TaborProgram(ProgramEntry):
         else:
             self.setup_advanced_sequence_mode()
 
-        self._sampled_segments = self._calc_sampled_segments()
+        self._sampled_segments, self._waveform_to_segment = self._calc_sampled_segments()
 
     @property
     def markers(self) -> Tuple[Optional[ChannelID], Optional[ChannelID]]:
@@ -463,7 +464,7 @@ class TaborProgram(ProgramEntry):
             marker = self._markers[marker_idx]
             return waveform.get_sampled(channel=marker, sample_times=time) != 0
 
-    def _calc_sampled_segments(self) -> Tuple[Sequence[TaborSegment], Sequence[int]]:
+    def _calc_sampled_segments(self) -> Tuple[Tuple[Sequence[TaborSegment], Sequence[int]], Sequence[int]]:
         """
         Returns:
             (segments, segment_lengths)
@@ -473,7 +474,9 @@ class TaborProgram(ProgramEntry):
         if np.any(segment_lengths % 16 > 0) or np.any(segment_lengths < 192):
             raise TaborException('At least one waveform has a length that is smaller 192 or not a multiple of 16')
 
-        segments = []
+        segments: Dict[TaborSegment, int] = {}
+
+        waveform_to_segment = []
         for i, waveform in enumerate(self._parsed_program.waveforms):
             t = time_array[:segment_lengths[i]]
             marker_time = t[::2]
@@ -487,8 +490,10 @@ class TaborProgram(ProgramEntry):
                                    ch_b=segment_b,
                                    marker_a=marker_a,
                                    marker_b=marker_b)
-            segments.append(segment)
-        return segments, segment_lengths
+            segment_idx = segments.setdefault(segment, len(segments))
+            waveform_to_segment.append(segment_idx)
+        unique_segments = list(segments.keys())
+        return (unique_segments, [segment.num_points for segment in unique_segments]), waveform_to_segment
 
     def setup_single_sequence_mode(self) -> None:
         assert self.program.depth() == 1
@@ -555,10 +560,13 @@ class TaborProgram(ProgramEntry):
 
         return modifications
 
-    def get_sequencer_tables(self):  # -> List[List[TableDescription, Optional[MappedParameter]]]:
-        return self._parsed_program.sequencer_tables
+    def get_sequencer_tables(self) -> Sequence[Sequence[Tuple[TableDescription, Optional[VolatileProperty]]]]:
+        wf_to_seq = self._waveform_to_segment
+        return [[(TableDescription(rep_count, wf_to_seq[elem_idx], jump), volatile)
+                for (rep_count, elem_idx, jump), volatile in sequencer_table]
+                for sequencer_table in self._parsed_program.sequencer_tables]
 
-    def get_advanced_sequencer_table(self) -> List[TableEntry]:
+    def get_advanced_sequencer_table(self) -> Sequence[TableEntry]:
         """Advanced sequencer table that can be used  via the download_adv_seq_table pytabor command"""
         return self._parsed_program.advanced_sequencer_table
 
@@ -645,13 +653,13 @@ def prepare_program_for_advanced_sequence_mode(program: Loop, min_seq_len: int, 
             i += 1
 
 
-ParsedProgram = NamedTuple('ParsedProgram', [('advanced_sequencer_table', Sequence[TableEntry]),
-                                             ('sequencer_tables', Sequence[Sequence[
-                                                     Tuple[TableDescription, Optional[VolatileProperty]]]]),
-                                             ('waveforms', Tuple[Waveform, ...]),
-                                             ('volatile_parameter_positions', Dict[Union[int, Tuple[int, int]],
-                                                                                   VolatileRepetitionCount])])
-
+@dataclasses.dataclass
+class ParsedProgram:
+    advanced_sequencer_table: Sequence[TableEntry]
+    sequencer_tables: Sequence[Sequence[Tuple[TableDescription, Optional[VolatileProperty]]]]
+    waveforms: Tuple[Waveform, ...]
+    volatile_parameter_positions: Dict[Union[int, Tuple[int, int]], VolatileRepetitionCount]
+    
 
 def parse_aseq_program(program: Loop, used_channels: FrozenSet[ChannelID]) -> ParsedProgram:
     volatile_parameter_positions = {}

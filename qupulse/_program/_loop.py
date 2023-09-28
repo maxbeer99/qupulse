@@ -623,7 +623,7 @@ def make_compatible(program: Loop, minimal_waveform_length: int, waveform_quantu
 
     elif comp_level == _CompatibilityLevel.action_required:
         raise RuntimeError(f'{sample_rate} - this error is only raised to prevent performance-degrading pulse constructs.\n'+\
-                           'Comment out if you want to proceed')
+                            'Comment out if you want to proceed')
         warnings.warn("qupulse will now concatenate waveforms to make the pulse/program compatible with the chosen AWG."
                       " This might take some time. If you need this pulse more often it makes sense to write it in a "
                       "way which is more AWG friendly.", MakeCompatibleWarning)
