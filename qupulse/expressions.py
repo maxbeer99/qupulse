@@ -188,7 +188,7 @@ class ExpressionVector(Expression):
         self._assert_1d_numeric = assert_1d_numeric
         if assert_1d_numeric:
             # self._np_arr = np.asarray
-            self._expression_items = numpy.asarray(expression_vector) #tuple casting may not even be necessary?
+            self._expression_items = tuple(numpy.asarray(expression_vector)) #tuple casting necessary for serialization/comparisons?
             self._expression_shape = (len(expression_vector),)
             
             self._variables = tuple()
