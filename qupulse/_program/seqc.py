@@ -438,13 +438,14 @@ class WaveformMemory:
         self.program_pos_var_start = {}
 
         ct_index,wave_table_index = 0, 0
-     
+        # used_wf_idx = set()
+        
         for wave_placeholder, wave_infos in self._concatenated_waveforms_iter():
             wft_idxs = []
             for group_index,wave_info in enumerate(wave_infos):
                 current_filename = wave_info.file_name.replace('.csv', '')              
                 if current_filename not in filename_list_list[group_index]: # allegedly `in set` has O(1) complexity
-                                    
+                    # used_wf_idx.add(wave_table_index)
                     self._zhinst_waveforms_tuple[group_index][wave_table_index] = (wave_info.binary_waveform.ch1,
                                                                                    wave_info.binary_waveform.ch2,
                                                                                    wave_info.binary_waveform.marker_data)
@@ -465,8 +466,14 @@ class WaveformMemory:
                 
             self.program_pos_var_start.setdefault(wave_info.program_name, ct_index)
             self.ct_info_link[ct_index] = [wft_idxs,wave_info.sample_length,wave_info.sample_rate]
-
-            if ct_index > 1024:
+            
+            if len(set(wft_idxs)) >= 128:
+                raise RuntimeError('The WF-cache may be insufficient (too many individual wfs used).\n'\
+                                   +'There are more intricate mechanisms posssibly available to circumvent this, but for now brute force raise error.\n'\
+                                   +'use e.g. to_single_waveform to circumvent long sequences of short waveforms'
+                                   )
+            
+            if ct_index >= 1024:
                 raise RuntimeError('too many CT entries. Clear HardwareSetup for now. (HardwareSetup.clear_programs())') #needs to be handled otherwise then (somehow)...
         
             ct_index += 1
@@ -493,7 +500,7 @@ class WaveformMemory:
                                  )
   
                 
-            if ct_index > 1024:
+            if ct_index >= 1024:
                 raise RuntimeError('too many CT entries')
             declarations.append(wf_decl_string)
             
@@ -1652,7 +1659,8 @@ class SteppingRepeat(SEQCNode):
 
 class WaveformPlayback(SEQCNode):
     ADVANCE_DISABLED_COMMENT = ' // advance disabled do to parent repetition'
-    ENABLE_DYNAMIC_RATE_REDUCTION = False
+    # ENABLE_DYNAMIC_RATE_REDUCTION = False #TODO: fix this, enable this, and care for pre-set rate reduction in awg tab
+    ENABLE_DYNAMIC_RATE_REDUCTION = True #TODO: fix this, enable this, and care for pre-set rate reduction in awg tab
 
     __slots__ = ('waveform', 'shared', 'rate')
 
@@ -1662,8 +1670,11 @@ class WaveformPlayback(SEQCNode):
         if rate is not None:
             assert rate <= max_rate_divider
         if self.ENABLE_DYNAMIC_RATE_REDUCTION and rate is None:
-            for wf in waveform:
-                rate = wf.dynamic_rate(max_rate_divider if rate is None else rate)
+            # for wf in waveform:
+                #TODO
+            # rate = min([wf.dynamic_rate(max_rate_divider if rate is None else rate)])
+            rate = min([wf.dynamic_rate(max_rate_divider) for wf in waveform])
+
         self.waveform = waveform
         self.shared = shared
         self.rate = rate
