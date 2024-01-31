@@ -311,7 +311,9 @@ class AlazarCard(DAC):
     def register_operations(self, program_name: str, operations) -> None:
         self._registered_programs[program_name].operations = operations
 
-    def arm_program(self, program_name: str) -> None:
+    def arm_program(self, program_name: str,
+                    extend_to_all_channels: bool = False #for hacky workarounds
+                    ) -> None:
         logger.debug("Arming program %s on %r", program_name, self.__card)
 
         to_arm = self._registered_programs[program_name]
@@ -350,7 +352,7 @@ class AlazarCard(DAC):
             elif config.totalRecordSize < total_record_size:
                 raise ValueError('specified total record size is smaller than needed {} < {}'.format(config.totalRecordSize,
                                                                                                      total_record_size))
-            self.__card.applyConfiguration(config, True)
+            self.__card.applyConfiguration(config, True, extend_to_all_channels=extend_to_all_channels) #HACKY HACK
             self._current_config = config
 
             self.update_settings = False

@@ -227,7 +227,7 @@ class HardwareSetup:
         dacs = {mask.dac for mask in masks}
         return dacs
 
-    def arm_program(self, name: str) -> None:
+    def arm_program(self, name: str, **dac_kwargs) -> None:
         """Assert program is in memory. Hardware will wait for trigger event"""
         if name not in self._registered_programs:
             raise KeyError('{} is not a registered program'.format(name))
@@ -240,11 +240,11 @@ class HardwareSetup:
                 # The other AWGs should ignore the trigger
                 awg.arm(None)
         for dac in dacs_to_arm:
-            dac.arm_program(name)
+            dac.arm_program(name,**dac_kwargs)
 
-    def run_program(self, name) -> None:
+    def run_program(self, name, **dac_kwargs) -> None:
         """Calls arm program and starts it using the run callback"""
-        self.arm_program(name)
+        self.arm_program(name, **dac_kwargs)
         self._registered_programs[name].run_callback()
 
     def set_channel(self, identifier: ChannelID,
