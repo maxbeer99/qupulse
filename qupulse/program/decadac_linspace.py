@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Mapping, Optional, Sequence, ContextManager, Iterable, Tuple, Union, Dict, List, Iterator, Callable
 
 from qupulse import ChannelID
-from qupulse.program import Waveform, TimeType
+from qupulse._program import Waveform, TimeType
 
 # this resolution is used to unify increments
 # the increments themselves remain floats
