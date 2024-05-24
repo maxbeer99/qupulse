@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Mapping, Optional, Sequence, ContextManager, Iterable, Tuple, Union, Dict, List, Iterator, Callable
 
 from qupulse import ChannelID
-from qupulse._program import Waveform, TimeType
+from qupulse._program.waveforms import Waveform
+from qupulse.utils.types import TimeType
 
 # this resolution is used to unify increments
 # the increments themselves remain floats
@@ -111,6 +112,13 @@ class Increment:
 class Set:
     channel: int
     value: float
+    key: DepKey = dataclasses.field(default_factory=lambda: DepKey(()))
+
+@dataclass
+class Ramp:
+    channel: int
+    value: float
+    ramp_time: float
     key: DepKey = dataclasses.field(default_factory=lambda: DepKey(()))
 
 
