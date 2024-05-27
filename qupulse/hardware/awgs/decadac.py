@@ -244,7 +244,7 @@ def _get_ramp_str(current_val:Union[float,int], final_val:Union[float,int],
 
 
 
-def translate_command_list_to_ascii(commands:List[Command], channel_mapping:Union[Dict[int, int], None]=None, volt_in_dac_basis:bool=False, with_trigger:bool = False) -> str:
+def translate_command_list_to_ascii(commands:List[Command], channel_mapping:Union[Dict[int, int], None]=None, volt_in_dac_basis:bool=False, with_trigger:bool = True) -> str:
 
     boards:Union[List[int], None] = None # TODO get this list from the used channel
     
@@ -282,8 +282,12 @@ def translate_command_list_to_ascii(commands:List[Command], channel_mapping:Unio
 
     if with_trigger:
         last_used_loop_addrs += 1
-        res.append(f"*{last_used_loop_addrs}:X{0x800+last_used_loop_addrs};")
-
+        # assert last_used_loop_addrs<10, NotImplementedError()
+        # res.append(f"*{last_used_loop_addrs}:X{0x800+last_used_loop_addrs};")
+        res.append(f"*{last_used_loop_addrs}:B4;C3;T100;S0;D1;A1849;G10;S-2147483647;")
+        last_used_loop_addrs += 1
+        res.append(f"*{last_used_loop_addrs}:{0x500+last_used_loop_addrs};")
+        
     
     for cmd in commands:
         if cmd.__class__.__name__ == "LoopLabel":
@@ -419,8 +423,10 @@ class DecaDACRepresentation:
     def __init__(self, serial_ask:Callable):
         self.serial_ask = serial_ask
 
-    def upload_command_list(self, commands:List[Command], channel_mapping:Union[Dict[int, int], None]=None, volt_in_dac_basis:bool=False):
-        ascii_script = translate_command_list_to_ascii(commands, channel_mapping=channel_mapping, volt_in_dac_basis=volt_in_dac_basis)
+    def upload_command_list(self, commands:List[Command], channel_mapping:Union[Dict[int, int], None]=None, volt_in_dac_basis:bool=False,
+                            with_trigger: bool = True,
+                            ):
+        ascii_script = translate_command_list_to_ascii(commands, channel_mapping=channel_mapping, volt_in_dac_basis=volt_in_dac_basis, with_trigger=with_trigger)
         print('sending: ' + ascii_script)
         resp = upload_script(script=f"{{{ascii_script}}};", serial_ask=self.serial_ask)
         print('receiving: ' + resp)
