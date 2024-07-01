@@ -147,7 +147,8 @@ class HDAWGRepresentation:
                 ]
             else:
                 groups = []
-                for group_idx in range(n_channels // group_size):
+                #!!! the 2x4 mode demands the index "2" instead of "1" for the second sequencer:
+                for group_idx in [0,1,2,3][::group_size//2]:
                     groups.append(SingleDeviceChannelGroup(group_idx, group_size,
                                                            identifier=self.group_name(group_idx, group_size),
                                                            timeout=self.default_timeout))
