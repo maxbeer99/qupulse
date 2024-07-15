@@ -148,9 +148,9 @@ class HDAWGRepresentation:
             else:
                 groups = []
                 #!!! the 2x4 mode demands the index "2" instead of "1" for the second sequencer:
-                for group_idx in [0,1,2,3][::group_size//2]:
-                    groups.append(SingleDeviceChannelGroup(group_idx, group_size,
-                                                           identifier=self.group_name(group_idx, group_size),
+                for group_idx,ch_name_group_idx in zip([0,1,2,3][::group_size//2],list(range(n_channels // group_size))):
+                    groups.append(SingleDeviceChannelGroup(group_idx,ch_name_group_idx, group_size,
+                                                           identifier=self.group_name(ch_name_group_idx, group_size),
                                                            timeout=self.default_timeout))
             self._channel_groups[grouping] = tuple(groups)
 
@@ -995,6 +995,7 @@ class MDSChannelGroup(HDAWGChannelGroup):
 class SingleDeviceChannelGroup(HDAWGChannelGroup):
     def __init__(self,
                  group_idx: int,
+                 ch_name_group_idx: int,
                  group_size: int,
                  identifier: str,
                  timeout: float) -> None:
@@ -1006,6 +1007,7 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
         assert group_size in (2, 4, 8)
 
         self._group_idx = group_idx
+        self._ch_name_group_idx = ch_name_group_idx
         self._group_size = group_size
         
         super().__init__(identifier, timeout)
@@ -1018,7 +1020,7 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
 
     def _channels(self, index_start=1) -> Tuple[int, ...]:
         """1 indexed channel"""
-        offset = index_start + self._group_size * self._group_idx
+        offset = index_start + self._group_size * self._ch_name_group_idx
         return tuple(ch + offset for ch in range(self.num_channels))
 
     @property
@@ -1052,6 +1054,8 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
         amplitudes = []
 
         for ch, zi_amplitude in zip(self._channels(), _amplitude_scales(self.master_device.api_session, self.master_device.serial)):
+            print(self._channels())
+            print(ch)
             zi_range = self.master_device.range(ch)
             amplitudes.append(zi_amplitude * zi_range / 2)
         return tuple(amplitudes)
