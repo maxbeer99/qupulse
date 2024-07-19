@@ -1054,8 +1054,8 @@ class SingleDeviceChannelGroup(HDAWGChannelGroup):
         amplitudes = []
 
         for ch, zi_amplitude in zip(self._channels(), _amplitude_scales(self.master_device.api_session, self.master_device.serial)):
-            print(self._channels())
-            print(ch)
+            # print(self._channels())
+            # print(ch)
             zi_range = self.master_device.range(ch)
             amplitudes.append(zi_amplitude * zi_range / 2)
         return tuple(amplitudes)

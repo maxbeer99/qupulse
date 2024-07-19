@@ -313,31 +313,40 @@ class WaveformMemory:
                                                        0,0,"",len(wf.data)//3,0
                                                        )
 
-    def _concatenated_waveforms_iter(self) -> Iterator[Tuple[str, Tuple[_WaveInfo, ...]]]:
+    def _concatenated_waveforms_iter(self, single_program: Optional[str] = None) -> Iterator[Tuple[str, Tuple[_WaveInfo, ...]]]:
         for program_name, concatenated_waveform_list in self.concatenated_waveforms_subdivided.items():
-            # we assume that if the first entry is not empty the rest also isn't
-            for pos_index, binary_tuple in enumerate(concatenated_waveform_list):
-                if binary_tuple:
-                    infos = []
-                    for group_index, binary in enumerate(binary_tuple):
-                        wave_hash = binary.fingerprint()
-                        wave_name = self.CONCATENATED_WAVEFORM_TEMPLATE.format(program_name=program_name,
-                                                                               pos_index=pos_index,
-                                                                               group_index=group_index)
-                        file_name = self.FILE_NAME_TEMPLATE.format(hash=wave_hash)
-                        
-                        infos.append(self._WaveInfo(wave_name, file_name, binary,
-                                                    # self.WF_PLACEHOLDER_TEMPLATE.format(id=str(id(concatenated_waveform))+"_"+str(table_index))
-                                                    # str(wave_table_index),
-                                                    pos_index,
-                                                    group_index,
-                                                    program_name,
-                                                    self.concatenated_waveforms_subdivided_info[program_name][pos_index][0],
-                                                    self.concatenated_waveforms_subdivided_info[program_name][pos_index][1],
-                                                    ))
-    
-                    wave_placeholder = self.WF_PLACEHOLDER_TEMPLATE.format(id=id(binary))
-                    yield wave_placeholder, tuple(infos)
+            if single_program is None or single_program==program_name:
+                # we assume that if the first entry is not empty the rest also isn't
+                # print(f'entering {program_name} waveform iter')
+                for pos_index, binary_tuple in enumerate(concatenated_waveform_list):
+                    if binary_tuple:
+                        infos = []
+                        for group_index, binary in enumerate(binary_tuple):
+                            
+                            # print(f'group_index {group_index} of pos_index {pos_index}')
+                            
+                            wave_hash = binary.fingerprint()
+                            wave_name = self.CONCATENATED_WAVEFORM_TEMPLATE.format(program_name=program_name,
+                                                                                   pos_index=pos_index,
+                                                                                   group_index=group_index)
+                            file_name = self.FILE_NAME_TEMPLATE.format(hash=wave_hash)
+                            
+                            # print(f'AWAAWAWAWAW: {pos_index}')
+                            # print(f'rate_divider: {self.concatenated_waveforms_subdivided_info[program_name][pos_index][1]}')
+                            # print(self.concatenated_waveforms_subdivided_info[program_name])
+                            
+                            infos.append(self._WaveInfo(wave_name, file_name, binary,
+                                                        # self.WF_PLACEHOLDER_TEMPLATE.format(id=str(id(concatenated_waveform))+"_"+str(table_index))
+                                                        # str(wave_table_index),
+                                                        pos_index,
+                                                        group_index,
+                                                        program_name,
+                                                        self.concatenated_waveforms_subdivided_info[program_name][pos_index][0],
+                                                        self.concatenated_waveforms_subdivided_info[program_name][pos_index][1],
+                                                        ))
+        
+                        wave_placeholder = self.WF_PLACEHOLDER_TEMPLATE.format(id=id(binary))
+                        yield wave_placeholder, tuple(infos)
                 
                 
     def _fsp_waveforms_iter(self):
@@ -373,15 +382,17 @@ class WaveformMemory:
             
         return translation
     
-    def pos_var_start_name_replacements(self) -> Dict[str, str]:
+    def pos_var_start_name_replacements(self, single_program: Optional[str] = None) -> Dict[str, str]:
         
         translation = {}
         
         for program_name,concat_nested_list in self.concatenated_waveforms_subdivided.items():
-            translation[program_name+'_ct_pos_init'] = str(self.program_pos_var_start[program_name])
+            if single_program is None or single_program==program_name:
+                translation[program_name+'_ct_pos_init'] = str(self.program_pos_var_start[program_name])
             
         for program_name, (declaration_func,name_iter) in self.fsp_waveforms.items():
-            translation[program_name+'_ct_pos_init'] = str(self.program_pos_var_start[program_name])
+            if single_program is None or single_program==program_name:
+                translation[program_name+'_ct_pos_init'] = str(self.program_pos_var_start[program_name])
             
         return translation
             
@@ -415,13 +426,17 @@ class WaveformMemory:
                 #manual claims this could be faster than playWave nonetheless
                 ct_dict[ct_key].table[ct_idx].waveform.index = int(info_tuple[0][i])
                 ct_dict[ct_key].table[ct_idx].waveform.length = int(info_tuple[1])
+                # print(f'on awg {self._awg.identifier}')
+                # print(f'info tuple rate div: {int(info_tuple[2])}')
                 total_rate_divider = int(info_tuple[2])+awg_standard_rate
-                assert total_rate_divider <= self._awg.MAX_SAMPLE_RATE_DIVIDER
+                # print(f'info tuple rate div: {int(info_tuple[2])}')
+
+                assert total_rate_divider <= self._awg.MAX_SAMPLE_RATE_DIVIDER, f'{total_rate_divider}, maybe awg_rate_div has changed since some program has been added.'
                 ct_dict[ct_key].table[ct_idx].waveform.samplingRateDivider = total_rate_divider
             
         return ct_dict
     
-    def waveform_declaration(self,ct_dict) -> str:
+    def waveform_declaration(self, ct_dict, single_program: Optional[str] = None) -> str:
         """Produces a string that declares all needed waveforms.
         It is needed to know the waveform index in case we want to update a waveform during playback."""
         declarations = []
@@ -440,7 +455,7 @@ class WaveformMemory:
         ct_index,wave_table_index = 0, 0
         # used_wf_idx = set()
         
-        for wave_placeholder, wave_infos in self._concatenated_waveforms_iter():
+        for wave_placeholder, wave_infos in self._concatenated_waveforms_iter(single_program):
             wft_idxs = []
             for group_index,wave_info in enumerate(wave_infos):
                 current_filename = wave_info.file_name.replace('.csv', '')              
@@ -480,7 +495,9 @@ class WaveformMemory:
             #TODO: this can be more efficient, i believe. correspondent to ct is fine however, since way more waveforms than ct entries available.
             wave_table_index += 1
         
+        
         for wave_placeholder,wave_info in self._shared_waveforms_iter():
+            raise NotImplementedError()
             declarations.append(
                 'wave {wave_name} = "{file_name}";'.format(wave_name=wave_info.wave_name,
                                                            file_name=wave_info.file_name.replace('.csv', ''))
@@ -489,20 +506,22 @@ class WaveformMemory:
             
         for program_name, (declaration_func,name_iter) in self.fsp_waveforms.items():
             
-            # print('\n IN SEQC WF DECL FILL \n')
-            # print(ct_dict[0].as_dict())    
+            if single_program is None or single_program==program_name:
             
-            
-            self.program_pos_var_start[program_name] = ct_index
-            wf_decl_string, ct_index, wave_table_index, self._zhinst_waveforms_tuple = \
-                declaration_func(self._awg,ct_dict,ct_start_index=ct_index,wf_start_index=wave_table_index,
-                                 waveforms_tuple = self._zhinst_waveforms_tuple
-                                 )
-  
+                # print('\n IN SEQC WF DECL FILL \n')
+                # print(ct_dict[0].as_dict())    
                 
-            if ct_index >= 1024:
-                raise RuntimeError('too many CT entries')
-            declarations.append(wf_decl_string)
+                
+                self.program_pos_var_start[program_name] = ct_index
+                wf_decl_string, ct_index, wave_table_index, self._zhinst_waveforms_tuple = \
+                    declaration_func(self._awg,ct_dict,ct_start_index=ct_index,wf_start_index=wave_table_index,
+                                     waveforms_tuple = self._zhinst_waveforms_tuple
+                                     )
+      
+                    
+                if ct_index >= 1024:
+                    raise RuntimeError('too many CT entries')
+                declarations.append(wf_decl_string)
             
         joined_str = '\n'.join(declarations)
         
@@ -570,6 +589,7 @@ class ProgramWaveformManager:
                             sample_rate_divider: int) -> str:
         """Append the waveform to the concatenated waveform"""        
         self._memory.concatenated_waveforms_subdivided[self._program_name].append(binary_waveform)
+        # print(f'wiuefgwegzf: {sample_rate_divider}')
         self._memory.concatenated_waveforms_subdivided_info[self._program_name].append((len(binary_waveform[0].ch1),sample_rate_divider))
 
         return 
@@ -998,6 +1018,8 @@ class HDAWGProgramManager:
         
         max_available_rate_divider = self._awg.MAX_SAMPLE_RATE_DIVIDER - self._awg.sample_rate_divider
         
+        # print(f'MAX AVAILABLE SAMPLE RATE DIV: {max_available_rate_divider}')
+        
         #probably need to disable this to always reinstantiate, cause also always filled.
         # if self._ct_dict is None:
         self._ct_dict = {i:CommandTable(s,active_validation=False) for i,s in enumerate(self._ct_schema_tuple_func(tuple(range(self._awg.num_channels//2))))}
@@ -1104,14 +1126,14 @@ class HDAWGProgramManager:
         # print('\n BEFORE SEQC FILL \n')
         # print(self._ct_dict[0].as_dict())
         
-        wf_lines = self._waveform_memory.waveform_declaration(self._ct_dict)
+        wf_lines = self._waveform_memory.waveform_declaration(self._ct_dict, single_program)
         lines.append(wf_lines)
         
         lines.append('\n// function used by manually triggered programs')
         lines.append(self.SOFTWARE_WAIT_FOR_TRIGGER_FUNCTION_DEFINITION)
         
         replacements_waveforms = self._waveform_memory.waveform_name_replacements()
-        replacements_pos_var = self._waveform_memory.pos_var_start_name_replacements()
+        replacements_pos_var = self._waveform_memory.pos_var_start_name_replacements(single_program)
         
         replacements = replacements_waveforms | replacements_pos_var
         
@@ -1674,7 +1696,9 @@ class WaveformPlayback(SEQCNode):
                 #TODO
             # rate = min([wf.dynamic_rate(max_rate_divider if rate is None else rate)])
             rate = min([wf.dynamic_rate(max_rate_divider) for wf in waveform])
-
+        
+        # print(f'{rate}')
+        
         self.waveform = waveform
         self.shared = shared
         self.rate = rate
@@ -1730,6 +1754,7 @@ class WaveformPlayback(SEQCNode):
                   f'{waveform_manager.request_shared(self.rate_reduced_waveform())}' \
                   f'{rate_adjustment});'
         else:
+            # print(f'rate adjust: {self.rate}')
             waveform_manager.request_list_append(self.rate_reduced_waveform(),self.rate if self.rate is not None else 0)
             play_cmd = f'{line_prefix}executeTableEntry({pos_var_name});'
 
