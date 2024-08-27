@@ -461,12 +461,20 @@ class WaveformMemory:
                 current_filename = wave_info.file_name.replace('.csv', '')              
                 if current_filename not in filename_list_list[group_index]: # allegedly `in set` has O(1) complexity
                     # used_wf_idx.add(wave_table_index)
-                    self._zhinst_waveforms_tuple[group_index][wave_table_index] = (wave_info.binary_waveform.ch1,
-                                                                                   wave_info.binary_waveform.ch2,
-                                                                                   wave_info.binary_waveform.marker_data)
+                    if np.any(wave_info.binary_waveform.marker_data):
+                        self._zhinst_waveforms_tuple[group_index][wave_table_index] = (wave_info.binary_waveform.ch1,
+                                                                                       wave_info.binary_waveform.ch2,
+                                                                                       wave_info.binary_waveform.marker_data)
+                        
+                        wave_str = ','.join(['{i},placeholder({length},true,true)'.format(i=i,length=wave_info.sample_length) for i in range(2*group_index+1,2*group_index+3)]) #should be same for all
                     
-                    wave_str = ','.join(['{i},placeholder({length},true,true)'.format(i=i,length=wave_info.sample_length) for i in range(2*group_index+1,2*group_index+3)]) #should be same for all
-                    
+                    else:
+                        self._zhinst_waveforms_tuple[group_index][wave_table_index] = (wave_info.binary_waveform.ch1,
+                                                                                       wave_info.binary_waveform.ch2,
+                                                                                       None)
+                        
+                        wave_str = ','.join(['{i},placeholder({length},false,false)'.format(i=i,length=wave_info.sample_length) for i in range(2*group_index+1,2*group_index+3)]) #should be same for all
+      
                     declarations.append(
                         'assignWaveIndex({wave_str},{index});'.format(index=wave_table_index, wave_str=wave_str)
                     )
