@@ -57,6 +57,29 @@ def valid_channel(function_object):
         return value
     return valid_fn
 
+def valid_channel_sine_pair(function_object):
+    """Check if channel is a valid AWG channels. Expects channel to be 2nd argument after self, 3rd being oscillator, or both kwargs"""
+    @functools.wraps(function_object)
+    def valid_fn(*args, **kwargs):
+        if ("channel" in kwargs and "sine" in kwargs):
+            channel, sine = kwargs['channel'], kwargs['sine']
+        elif ("channel" not in kwargs and "sine" not in kwargs):
+            channel, sine = args[1], args[2]
+        else:
+            HDAWGValueError("pass Channel&Sine either both as args or both as kwargs")
+
+        if channel not in range(1, 9):
+            raise ChannelNotFoundException(channel)
+        if sine not in range(1, 9):
+            raise HDAWGValueError(f"Sine range is [1,8], got {sine}")
+            
+        if (channel-1)//2 != (sine-1)//2:
+            raise HDAWGValueError(f"Channel {channel} and Sine {sine} not in same Wave pair")
+        
+        value = function_object(*args, **kwargs)
+        return value
+    return valid_fn
+
 
 def _amplitude_scales(api_session, serial: str):
     return tuple(
@@ -85,6 +108,42 @@ def _sigout_on(api_session, serial: str, channel: int, value: bool = None) -> bo
         api_session.setInt(node_path, value)
         api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
     return bool(api_session.getInt(node_path))
+
+def _osc_frequency(api_session, serial: str, osc: int, value: float = None) -> float:
+    """Query oscillator frequency (Hz) and optionally set it."""
+    node_path = f'/{serial}/oscs/{osc-1:d}/freq'
+    if value is not None:
+        api_session.setDouble(node_path, value)
+        api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
+    return api_session.getDouble(node_path)
+
+def _sine_amplitude(api_session, serial: str, channel: int, sine: int, value: float = None) -> float:
+    """Query sine peak amplitude (V) and optionally set it."""
+    mod_channel = (channel-1)%2
+    node_path = f'/{serial}/sines/{sine-1:d}/amplitudes/{mod_channel:d}'
+    if value is not None:
+        api_session.setDouble(node_path, value)
+        api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
+    return api_session.getDouble(node_path)
+
+def _sine_phaseshift(api_session, serial: str, sine: int, value: float = None) -> float:
+    """Query sine phase shift (deg) and optionally set it."""
+    node_path = f'/{serial}/sines/{sine-1:d}/phaseshift'
+    if value is not None:
+        api_session.setDouble(node_path, value)
+        api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
+    return api_session.getDouble(node_path)
+
+def _sine_channel_on(api_session, serial: str, channel: int, sine: int, value: bool = None) -> bool:
+    """Query channel-sine pair output status (enabled/disabled) and optionally set it."""
+    mod_channel = (channel-1)%2
+    node_path = f'/{serial}/sines/{sine-1:d}/enables/{mod_channel:d}'
+    if value is not None:
+        api_session.setInt(node_path, value)
+        api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
+    return bool(api_session.getInt(node_path))
+    
+
 
 
 @traced
@@ -302,7 +361,45 @@ class HDAWGRepresentation:
     def output(self, channel: int, status: bool = None) -> bool:
         """Query channel signal output status (enabled/disabled) and optionally set it. Corresponds to front LED."""
         return _sigout_on(self.api_session, self.serial, channel, status)
+    
+    @valid_channel_sine_pair
+    def sine(self, channel: int, sine: int, status: bool = None) -> bool:
+        """Query channel-sine pair output status (enabled/disabled) and optionally set it."""
+        return _sine_channel_on(self.api_session, self.serial, channel, sine, status)
+    
+    @valid_channel_sine_pair
+    def sine_amplitude(self, channel: int, sine: int, voltage: float = None) -> float:
+        """Query channel-sine pair output status (enabled/disabled) and optionally set it."""
+        if voltage is not None:
+            assert voltage<=5.0 and voltage>=-5.0, "valid peak amplitude range is [-5.,5.]"
+        return _sine_amplitude(self.api_session, self.serial, channel, sine, voltage)
+    
+    def sine_phaseshift(self, sine: int, phase: float = None) -> float:
+        """Query sine pair output status (enabled/disabled) and optionally set it."""
+        assert sine>=1 and sine<=4, "sine range [1,9]"
+        if phase is not None:
+            assert phase<=180.0 and phase>=-180.0, "valid phase range is [-180.,180.]"
+        return _sine_phaseshift(self.api_session, self.serial, sine, phase)
+    
+    def oscillator_frequency(self, osc: int, frequency: float = None) -> float:
+        """Query oscillator frequency (Hz) and optionally set it."""
+        assert osc>=1 and osc<=4, "oscillator range [1,4]"
+        if frequency is not None:
+            assert frequency<=1.2e9 and frequency>=-1.2e9, "frequency range [-1.2 GHz, 1.2 GHz]"
+        return _osc_frequency(self.api_session, self.serial, osc, frequency)
+    
+    @valid_channel
+    def modulation_mode(self, channel: int, mode: int = None) -> int:
+        """Query oscillator frequency (Hz) and optionally set it."""
+        assert mode in range(7), 'Invalid modulation mode, range [0,6]'
 
+        node_path = f'/{self.serial}/awgs/{(channel-1)//2:d}/outputs/{(channel-1)%2:d}/modulation/mode'
+        
+        if mode is not None:
+            self.api_session.setInt(node_path, mode)
+            self.api_session.sync()  # Global sync: Ensure settings have taken effect on the device.
+        return self.api_session.getInt(node_path)
+    
     def get_status_table(self):
         """Return node tree of instrument with all important settings, as well as each channel group as tuple."""
         return (self.api_session.get('/{}/*'.format(self.serial)),
